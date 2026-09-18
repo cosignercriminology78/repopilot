@@ -1,10 +1,62 @@
 # RepoPilot
 
-**Local-first GitHub policy checks, test generation and verified repair branches powered by Codex.**
+**A self-hosted PR testing and repair agent built with the OpenAI Codex SDK.**
 
 [中文说明](README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](SECURITY.md) · [Verification](docs/VERIFICATION.md)
 
-RepoPilot watches pull requests, checks trusted base-branch rules, generates tests from PR requirements, and proposes a separate repair branch after independent verification. It never merges automatically.
+RepoPilot helps repository maintainers turn GitHub pull requests into reviewable test evidence and repair proposals. It uses Codex to review repository rules, generate requirement-driven tests, and propose fixes. A separate Docker runner checks the code before the controller can publish a repair branch and draft PR. Maintainers retain the merge decision.
+
+## What problem does it solve?
+
+A passing existing test suite may miss a new requirement or an untested edge case. Maintainers also need to check repository-specific conventions, reproduce reported failures, and confirm that a proposed fix preserves existing behavior. RepoPilot brings these steps into one repeatable workflow.
+
+| Maintainer problem | How RepoPilot addresses it |
+| --- | --- |
+| A PR changes behavior that existing tests do not cover | Codex generates new tests from the PR description and changed code; the runner compares base and head results. |
+| Project conventions live in AGENTS.md and are easy to miss | Static rules and Codex semantic review use trusted base-branch policy, with cited rules and code evidence. |
+| A suggested fix has no reproducible verification | Tests are frozen before repair; candidates must preserve test identities and pass independent execution and policy rechecks. |
+| An environment failure or flaky test looks like a code defect | Environment failures receive bounded retries; unstable or incomplete evidence blocks automatic repair. |
+| Review evidence is scattered across logs and patches | Local JSON/Markdown reports retain findings, test outcomes, repair attempts and publication state. |
+
+## Who is it for?
+
+- **Open-source maintainers** who want help reviewing same-repository PRs, checking contribution rules and producing regression evidence.
+- **Small JavaScript/TypeScript teams** that need additional test coverage and repair proposals without building a custom agent controller.
+- **QA and developer-tooling engineers** who maintain Node/Vitest suites, monorepos and test environments with database or Redis dependencies.
+- **Developers building with Codex** who want an inspectable example of SDK orchestration, structured model output, independent verification and bounded repair.
+
+These are intended users, not claims of existing adoption. The current scope is public, text-based repositories with Node or Vitest test evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
+
+## How it uses OpenAI Codex
+
+RepoPilot directly depends on `@openai/codex-sdk`. OpenAI documents the SDK as a way to embed Codex in applications and engineering workflows; RepoPilot uses its TypeScript interface for review, test planning and repair proposals. See the [official Codex SDK documentation](https://learn.chatgpt.com/docs/codex-sdk).
+
+The [agent entry point](src/adapters/codex/entry.ts) creates `Codex` with `OPENAI_API_KEY`, starts a thread and calls `thread.run()` with a JSON output schema. The [container adapter](src/adapters/codex/docker-agent.ts) supplies scoped repository context and accounts for reported model usage. The [pipeline](src/application/pipeline.ts) validates proposed changes and delegates test execution to a separate runner.
+
+| Codex responsibility | RepoPilot controller responsibility |
+| --- | --- |
+| Review natural-language repository rules and cite violations | Load trusted rules from the pinned base and compare historical findings |
+| Design tests for requested behavior and edge cases | Freeze generated tests and execute them against pinned snapshots |
+| Propose production-code replacements | Enforce protected paths, verify candidates and publish only eligible results |
+
+The controller, test execution and reports run on your machine or worker. Model calls use OpenAI services and send selected repository text and task context; self-hosting does not mean offline model inference. GitHub credentials stay in the controller. This is an independent MIT-licensed project built with Codex, not an official OpenAI product.
+
+## Example workflow
+
+For a hypothetical PR that adds an input-validation rule, Codex can propose boundary tests tied to the requested behavior. RepoPilot runs them on both revisions. A new-behavior test that fails on base and passes on head needs an exact supporting requirement quote; an existing-behavior test that passes on base and fails on head is a regression candidate. Only reproducible regressions or eligible policy violations proceed to repair.
+
+```mermaid
+flowchart LR
+    A[PR code and description] --> B[Pin commits and load trusted rules]
+    B --> C[Codex review and test plan]
+    C --> D[Independent base and head tests]
+    D --> E[Report evidence]
+    D --> F[Eligible issue: Codex repair proposal]
+    F --> G[Verify frozen tests and policy]
+    G --> H[Optional repair branch and draft PR]
+```
+
+Start with a local `check`; enable `watch` for GitHub polling and `publish` when you want verified proposals submitted for human review. Agent review, repair and publishing are separately configurable and disabled in the example configuration.
 
 ## Implemented
 
@@ -19,7 +71,7 @@ RepoPilot watches pull requests, checks trusted base-branch rules, generates tes
 - Separate autofix branches/draft PRs, executable-mode preservation and collision-safe publication recovery.
 - Atomic JSON reports, Markdown evidence summaries, previous-execution archives and exclusive controller lock.
 
-This developer preview has offline tests for its controller and verification gates. No live Docker + Codex + GitHub repair acceptance run is claimed.
+Developer preview. See [verification coverage](docs/VERIFICATION.md) for the current validation scope and [security](SECURITY.md) for execution boundaries.
 
 ## Setup
 

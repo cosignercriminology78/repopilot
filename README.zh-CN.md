@@ -1,8 +1,66 @@
 # RepoPilot
 
-**本地部署的 GitHub 仓库规范检查、自动化测试与修复 Agent。**
+**基于 OpenAI Codex SDK 构建、可本地部署的 GitHub PR 自动化测试与修复 Agent。**
 
-读取 PR 代码与描述，用 Codex SDK 审查规范和生成测试；在独立快照中验证问题、提出修复，验证通过后建立独立分支与草稿 PR。不会自动合并。
+[English](README.md) · [架构说明](docs/ARCHITECTURE.md) · [测试环境](docs/TEST-ENVIRONMENTS.md) · [安全边界](SECURITY.md)
+
+RepoPilot 帮助仓库维护者把 PR 中的代码与需求描述转化为可检查的测试证据和修复建议。项目使用 Codex 审查仓库规范、生成需求测试和提出修复，再由独立 Docker 执行器验证代码。验证通过后，控制器可以建立修复分支和草稿 PR，由维护者决定是否合并。
+
+## 解决什么问题？
+
+已有测试全部通过，并不代表新增需求、异常输入和边界情况都已覆盖。维护者还需要检查项目约定、复现问题，以及确认修复没有破坏已有行为。RepoPilot 将这些步骤组织成可重复执行、可追溯的流程。
+
+| 维护中的问题 | RepoPilot 的处理方式 |
+| --- | --- |
+| PR 引入了已有测试没有覆盖的行为 | Codex 根据需求描述和代码生成新测试，执行器对比 base 与 head 的结果。 |
+| AGENTS.md 中的项目规范容易被遗漏 | 静态规则与 Codex 语义审查读取可信基线规范，结论附规则原文和代码证据。 |
+| 修复建议缺乏可复现的验证 | 修复前冻结测试；候选代码必须保留相同用例，并通过独立执行及规范复查。 |
+| 环境异常或不稳定测试被误当成代码缺陷 | 环境异常有限重试；重复结果不稳定或证据不完整时，阻止自动修复。 |
+| 日志、测试结果和修复补丁分散 | JSON 与 Markdown 报告集中保存问题、用例结果、修复尝试和发布状态。 |
+
+## 适合哪些用户？
+
+- **开源项目维护者**：希望辅助审查同仓库 PR、核对贡献规范，并补充回归测试证据。
+- **中小型 JavaScript/TypeScript 团队**：希望补充测试覆盖并获得修复建议，同时自行掌握运行环境和合并决策。
+- **测试与研发效能工程师**：维护 Node/Vitest 测试、Monorepo，以及依赖数据库或 Redis 的测试环境。
+- **基于 Codex 开发工具的开发者**：希望参考 SDK 编排、结构化模型输出、独立验证和有限轮次修复的开源实现。
+
+以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库，以及 Node/Vitest 的结构化测试证据；暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
+
+## 与 Codex、OpenAI 的直接关系
+
+RepoPilot 的智能审查、测试规划和修复提案直接调用 `@openai/codex-sdk`。OpenAI 官方将 Codex SDK 用于在应用和工程流程中集成 Codex；本项目使用其 TypeScript 接口完成这些任务。参见 [Codex SDK 官方文档](https://learn.chatgpt.com/docs/codex-sdk)。
+
+具体实现可以直接查看源码：
+
+- [Agent 入口](src/adapters/codex/entry.ts)：通过 `OPENAI_API_KEY` 初始化 `Codex`，建立线程，并使用 `thread.run()` 和 JSON Schema 获取结构化结果。
+- [Codex 容器适配器](src/adapters/codex/docker-agent.ts)：提供按范围整理的代码上下文，管理调用次数及模型返回的 Token 用量。
+- [验证流程](src/application/pipeline.ts)：校验模型提案，在独立执行器中验证测试，决定是否接受修复及进入发布流程。
+
+| Codex 负责 | RepoPilot 控制器负责 |
+| --- | --- |
+| 理解自然语言规范，给出带引用的问题发现 | 从固定 base 提取可信规范，对比历史问题 |
+| 为需求与边界情况设计测试 | 冻结测试，并在固定代码快照中执行 |
+| 提出生产代码修复 | 检查受保护路径、验证候选代码并控制发布 |
+
+控制器、测试执行与报告保存在自己的机器或工作节点上；模型调用仍使用 OpenAI 服务，并发送选取的仓库文本与任务上下文。本地部署不等于离线模型推理。GitHub 凭据保留在控制器中。项目采用 MIT 许可证，是基于 Codex 构建的独立开源项目。
+
+## 一个典型使用场景
+
+假设某个 PR 新增输入校验规则：Codex 根据需求生成边界测试，RepoPilot 在 base 与 head 上分别执行。新需求测试在 base 失败、head 通过时，必须有 PR 需求原文支撑；已有行为在 base 通过、head 失败时，才成为回归候选。可重复的回归或符合修复条件的规范错误，才进入修复流程。
+
+```mermaid
+flowchart LR
+    A[PR 代码与需求描述] --> B[固定提交并读取可信规范]
+    B --> C[Codex 审查与测试规划]
+    C --> D[独立执行 base 与 head 测试]
+    D --> E[生成证据报告]
+    D --> F[符合条件的问题：Codex 提出修复]
+    F --> G[验证冻结测试与仓库规范]
+    G --> H[可选发布修复分支和草稿 PR]
+```
+
+可以先运行本地 `check`，再用 `watch` 轮询 GitHub PR；需要提交已验证的修复供人工审查时，再开启 `publish`。Agent 审查、修复及发布分别配置，示例配置默认关闭这三项。
 
 ## 已实现的代码功能
 
@@ -41,7 +99,7 @@ npm run dev -- watch --config config.local.json --once
 
 check 不修改源工作区、不发布 GitHub 内容。watch 持续或单次轮询；publish 开启时才发布修复 PR。控制器配置放在受审查快照之外。
 
-默认使用 runner.reporter=node 和 node --test。Vitest 需要设置 reporter=vitest，命令使用可信镜像中已安装的 vitest run；依赖预装在镜像中，执行时禁止联网。reporter=command 仅收集命令输出，不能用于验证或发布。先执行 npm run build，生成可信 Node reporter。
+默认使用 runner.reporter=node 和 node --test。Vitest 需要设置 reporter=vitest，命令使用可信镜像中已安装的 vitest run；依赖须预装在镜像中。测试默认无网络，配置依赖服务后使用临时内部 Docker 网络，具体边界见[测试环境说明](docs/TEST-ENVIRONMENTS.md)。reporter=command 仅收集命令输出，不能用于验证或发布。先执行 npm run build，生成可信 Node reporter。
 
 ## Codex 与凭据
 
@@ -100,7 +158,7 @@ npm run dev -- tasks rerun 任务ID --config config.local.json
 
 ## 当前边界
 
-代码已增加离线回归验证；本轮不运行真实 Docker、Codex 推理或 GitHub 修复闭环。具体覆盖见 [验证记录](docs/VERIFICATION.md)。
+项目处于开发预览阶段，当前验证范围与回归覆盖见[验证记录](docs/VERIFICATION.md)，执行边界见[安全说明](SECURITY.md)。
 
 首版处理公开、文本型、同仓库 PR；不自动执行 fork PR。二进制、符号链接、子模块及大小写冲突路径会报错。单控制器串行执行；崩溃遗留锁仍需确认旧进程停止后人工清理。没有 Web 界面、分布式队列、浏览器 E2E、自动安装依赖或自动合并。
 
