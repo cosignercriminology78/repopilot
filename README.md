@@ -75,6 +75,8 @@ Developer preview. See [verification coverage](docs/VERIFICATION.md) for the cur
 
 ## Setup
 
+Download a [1.0.0 portable release](https://github.com/indada/repopilot/releases/tag/v1.0.0) for Linux, Windows or macOS to run without installing Node.js. See [portable quickstart](docs/QUICKSTART.md). The following commands are for source installations.
+
 Node.js 22 recommended, npm and Git. Test and agent execution requires Docker with Linux containers.
 
 ```sh

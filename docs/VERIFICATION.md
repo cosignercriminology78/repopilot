@@ -1,6 +1,6 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 69 offline regression tests and compilation.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 70 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
 
 Coverage includes:
 

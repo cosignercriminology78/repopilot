@@ -80,6 +80,8 @@ flowchart LR
 
 ## 启动
 
+直接使用可下载 [1.0.0 便携包](https://github.com/indada/repopilot/releases/tag/v1.0.0)，支持 Linux、Windows、macOS，内置 Node.js，无需 npm 安装。参见[便携版快速入门](docs/QUICKSTART.md)。以下为源码安装方式。
+
 需要 Node.js 22、Git，以及用于执行目标测试和 Agent 的 Linux Docker 容器。
 
 ```powershell
