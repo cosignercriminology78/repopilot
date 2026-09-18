@@ -1,11 +1,12 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { store, verifiedReport, result, pr } from './helpers.js';
-import { configSchema } from '../src/config.js';
-import { pipelineId, runPipeline } from '../src/pipeline.js';
-import { replayInput } from '../src/tasks.js';
-import { finishReport } from '../src/publication.js';
-import { GitHub } from '../src/github.js';
+import test from 'node:test';
+import { GitHub } from '../src/adapters/github/client.js';
+import { runPipeline } from '../src/application/pipeline.js';
+import { finishReport } from '../src/application/publication.js';
+import { replayInput } from '../src/application/tasks.js';
+import { configSchema } from '../src/domain/config.js';
+import { pipelineId } from '../src/domain/identity.js';
+import { pr, result, store, verifiedReport } from './helpers.js';
 
 const config = configSchema.parse({ repository: 'owner/repo' });
 const input = { base: new Map([['a.ts', 'before']]), head: new Map([['a.ts', 'after']]),

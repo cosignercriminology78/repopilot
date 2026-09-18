@@ -1,8 +1,10 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 49 offline regression tests and compilation.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 52 offline regression tests and compilation.
 
 Coverage includes:
+
+- Layer dependency/cycle enforcement, stable version-three task IDs, and clean-build CLI/Codex/reporter path resolution.
 
 - Trusted policy, nested instructions, AST calls versus comments/strings, contradictory rules and exception expiration.
 - Historical occurrence matching, scoped verbatim citations and protected-path rejection.
@@ -24,4 +26,4 @@ npm test
 npm run build
 ```
 
-No real Docker container, Codex inference, or GitHub repair PR is invoked by these tests. The user's requested scope is code completeness and offline verification; live integration acceptance remains separate. Initial Linux CI success does not validate this unpushed revision.
+No real Docker container, Codex inference, or GitHub repair PR is invoked by these tests. The user's requested scope is code completeness and offline verification; live integration acceptance remains separate. See GitHub Actions for commit-specific CI results.

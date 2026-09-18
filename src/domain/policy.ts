@@ -1,7 +1,7 @@
-import { z } from 'zod';
 import ts from 'typescript';
-import { safePath } from './git.js';
-import type { Finding, Snapshot, Report } from './types.js';
+import { z } from 'zod';
+import { safePath } from './snapshot.js';
+import type { Finding, Report, Snapshot } from './types.js';
 
 const ruleSchema = z.object({
   id: z.string().min(1), scope: z.string().default(''), extensions: z.array(z.string().regex(/^\.[a-z0-9]+$/i)).default([]),

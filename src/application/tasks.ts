@@ -1,13 +1,15 @@
 import { randomUUID } from 'node:crypto';
-import type { Config } from './config.js';
-import type { Store } from './store.js';
-import type { Agent } from './agent.js';
-import type { Runner } from './runner.js';
-import type { Report } from './types.js';
-import { runPipeline, pipelineId, type RunInput } from './pipeline.js';
-import { snapshot } from './git.js';
-import { GitHub } from './github.js';
-import { withFreshness } from './control.js';
+import type { Config } from '../domain/config.js';
+import { pipelineId } from '../domain/identity.js';
+import { type RunInput } from '../domain/task.js';
+import type { Report } from '../domain/types.js';
+import type { Agent } from '../ports/agent.js';
+import type { GitHub } from '../ports/github.js';
+import type { Repository } from '../ports/repository.js';
+import type { Runner } from '../ports/runner.js';
+import type { Store } from '../ports/store.js';
+import { withFreshness } from '../shared/control.js';
+import { runPipeline } from './pipeline.js';
 
 export function taskSummary(report: Report) {
   return { id: report.id, status: report.status, repository: report.repository, pr: report.pr,
@@ -42,8 +44,7 @@ export function replayInput(report: Report, config: Config, mode: 'resume' | 're
 }
 /** Caller holds the controller lock. Replays pinned commits, never a moving branch name. */
 export async function replayTask(id: string, mode: 'resume' | 'rerun', config: Config, store: Store,
-  runner?: Runner, agent?: Agent, signal?: AbortSignal,
-  github: Pick<GitHub, 'current'> = new GitHub(config.repository, undefined, { signal, retry: config.retry })): Promise<Report> {
+  repository: Repository, github: Pick<GitHub, 'current'>, runner?: Runner, agent?: Agent, signal?: AbortSignal): Promise<Report> {
   const previous = await requireTask(store, id);
   const input = replayInput(previous, config, mode);
   const work = async (controlled?: AbortSignal) => {
@@ -51,8 +52,8 @@ export async function replayTask(id: string, mode: 'resume' | 'rerun', config: C
     if (mode === 'resume' && previous.status === 'verified') {
       return previous;
     }
-    const base = await snapshot(input.repoPath, input.baseSha, controlled);
-    const head = await snapshot(input.repoPath, input.headSha, controlled);
+    const base = await repository.snapshot(input.repoPath, input.baseSha, controlled);
+    const head = await repository.snapshot(input.repoPath, input.headSha, controlled);
     return runPipeline({ ...input, base, head }, config, store, runner, agent, controlled);
   };
   if (!previous.pr) return work(signal);

@@ -1,13 +1,9 @@
-import { mkdir, writeFile, chmod } from 'node:fs/promises';
+import { chmod, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { checked } from './process.js';
-import type { Snapshot, FileMode } from './types.js';
+import { safePath } from '../../domain/snapshot.js';
+import type { FileMode, Snapshot } from '../../domain/types.js';
+import { checked } from '../../shared/process.js';
 
-export function safePath(path: string): boolean {
-  return path.length > 0 && !path.includes('\\') && !path.includes(':') && !/[\x00-\x1f]/.test(path)
-    && path.split('/').every(part => !!part && part !== '.' && part !== '..' && part.toLowerCase() !== '.git'
-      && !/[. ]$/.test(part) && !/^(con|prn|aux|nul|com\d|lpt\d)(\.|$)/i.test(part));
-}
 export async function resolveCommit(repo: string, ref: string): Promise<string> {
   if (ref.startsWith('-')) throw new Error('Invalid git ref.');
   return (await checked('git', ['rev-parse', '--verify', `${ref}^{commit}`], repo)).trim();
@@ -44,11 +40,4 @@ export async function writeSnapshot(root: string, files: Snapshot): Promise<void
     await writeFile(target, content, 'utf8');
     await chmod(target, files.modes?.get(path) === '100755' ? 0o755 : 0o644);
   }
-}
-export function copySnapshot(files: Snapshot): Snapshot {
-  const copy: Snapshot = new Map(files); copy.modes = new Map(files.modes); return copy;
-}
-export function changedPaths(base: Snapshot, head: Snapshot): string[] {
-  return [...new Set([...base.keys(), ...head.keys()])].filter(path => base.get(path) !== head.get(path)
-    || (base.modes?.get(path) ?? '100644') !== (head.modes?.get(path) ?? '100644')).sort();
 }

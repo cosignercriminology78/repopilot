@@ -1,8 +1,8 @@
 // Runs only inside the agent image; no GitHub credentials or writable source checkout.
-import { readFile, mkdir } from 'node:fs/promises';
 import { Codex } from '@openai/codex-sdk';
+import { mkdir, readFile } from 'node:fs/promises';
 import { z } from 'zod';
-import { answerSchema } from './agent.js';
+import { answerSchema } from '../../domain/agent-answer.js';
 
 const input = JSON.parse(await readFile('/input/input.json', 'utf8'));
 await mkdir('/tmp/agent', { recursive: true });

@@ -1,10 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { configSchema } from '../src/config.js';
-import { runPipeline } from '../src/pipeline.js';
-import { result, testCase, store, agent, answer } from './helpers.js';
-import { StaleTaskError, RetryableError } from '../src/control.js';
-import type { Runner } from '../src/runner.js';
+import test from 'node:test';
+import { runPipeline } from '../src/application/pipeline.js';
+import { configSchema } from '../src/domain/config.js';
+import type { Runner } from '../src/ports/runner.js';
+import { RetryableError, StaleTaskError } from '../src/shared/control.js';
+import { agent, answer, result, store, testCase } from './helpers.js';
 const base = new Map([['.repopilot/policy.json', JSON.stringify({ rules: [{ id: 'bad', forbiddenText: 'BAD', extensions: ['.ts'], message: 'bad source' }] })], ['src/a.ts', 'GOOD']]);
 const head = new Map(base); head.set('src/a.ts', 'BAD');
 const input = { base, head, baseSha: 'a'.repeat(40), headSha: 'b'.repeat(40) };

@@ -1,10 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GitHub } from '../src/github.js';
-import { verifiedReport, pr, store } from './helpers.js';
-import { finishReport } from '../src/publication.js';
-import { configSchema } from '../src/config.js';
-import { RetryableError } from '../src/control.js';
+import test from 'node:test';
+import { GitHub } from '../src/adapters/github/client.js';
+import { finishReport } from '../src/application/publication.js';
+import { configSchema } from '../src/domain/config.js';
+import { RetryableError } from '../src/shared/control.js';
+import { pr, store, verifiedReport } from './helpers.js';
 test('stale commits, descriptions, drafts and forks prevent all GitHub mutations', async () => {
   for (const candidate of [
     { ...pr, head: { ...pr.head, sha: 'c'.repeat(40) } }, { ...pr, body: 'edited' },

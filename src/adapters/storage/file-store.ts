@@ -1,11 +1,11 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, open, readFile, rename, unlink, readdir } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { mkdir, open, readdir, readFile, rename, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Report } from './types.js';
-import { markdownReport } from './report.js';
+import type { Report } from '../../domain/types.js';
+import type { Store as TaskStore } from '../../ports/store.js';
+import { markdownReport } from '../../reporting/markdown.js';
 
-export function taskId(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24); }
-export class Store {
+export class Store implements TaskStore {
   constructor(readonly root: string) {}
   async acquire(): Promise<() => Promise<void>> {
     await mkdir(this.root, { recursive: true });

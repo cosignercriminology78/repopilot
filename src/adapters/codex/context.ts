@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
-import { changedPaths } from './git.js';
-import { instructions } from './policy.js';
-import type { Snapshot } from './types.js';
+import { instructions } from '../../domain/policy.js';
+import { changedPaths } from '../../domain/snapshot.js';
+import type { Snapshot } from '../../domain/types.js';
 
 export interface ContextBatch {
   diff: { path: string; before?: string; after?: string; beforeMode?: string; afterMode?: string; rules: { path: string; content: string }[] }[];

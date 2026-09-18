@@ -1,9 +1,9 @@
-import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
-import type { TestCase, TestResult } from './types.js';
-import type { ProcessResult } from './process.js';
+import { failureFingerprint, testId } from '../../domain/test-evidence.js';
+import type { TestCase, TestResult } from '../../domain/types.js';
+import type { ProcessResult } from '../../shared/process.js';
 
 export function testFile(file: string, root = '/tmp/work'): string {
   const normalized = (file.startsWith('file:') ? fileURLToPath(file) : file).replaceAll('\\', '/');
@@ -13,12 +13,6 @@ export function testFile(file: string, root = '/tmp/work'): string {
     throw new Error('Test result file is outside the tested snapshot.');
   }
   return relative;
-}
-export function testId(file: string, name: string): string { return JSON.stringify([file, name]); }
-export function failureFingerprint(failure: string): string {
-  // Ignore machine roots and stack positions, retain assertion values and error codes.
-  return createHash('sha256').update(failure.replace(/\r\n/g, '\n').split('\n')
-    .filter(line => !/^\s*at\s/.test(line)).join('\n').trim()).digest('hex').slice(0, 24);
 }
 const nodeSchema = z.object({ format: z.literal('repopilot-node-v1'), cases: z.array(z.object({
   file: z.string(), name: z.string().min(1), status: z.enum(['passed', 'failed', 'skipped']),
@@ -76,17 +70,4 @@ export function classifyTestResult(result: ProcessResult, adapter: 'node' | 'vit
     if ((!failed && result.code !== 0) || (failed && result.code === 0)) return { ...structured, status: 'error', reason: 'Exit code contradicts test report.' };
     return { ...structured, status: failed ? 'failed' : 'passed' };
   } catch (error) { return { ...common, status: 'error', reason: 'Invalid test report: ' + String(error) }; }
-}
-export function passed(result: TestResult): boolean {
-  return result.status === 'passed' && result.structured && result.cases.some(c => c.status === 'passed')
-    && result.cases.every(c => c.status !== 'failed');
-}
-export function sameFailures(a: TestResult, b: TestResult): boolean {
-  const failures = (r: TestResult) => r.cases.filter(c => c.status === 'failed').map(c => [c.id, c.fingerprint]).sort((x,y) => String(x[0]).localeCompare(String(y[0])));
-  return a.status === 'failed' && b.status === 'failed' && a.structured && b.structured
-    && failures(a).length > 0 && JSON.stringify(failures(a)) === JSON.stringify(failures(b));
-}
-export function preservesTests(before: TestResult, after: TestResult): boolean {
-  const byId = new Map(after.cases.map(c => [c.id, c]));
-  return before.cases.filter(c => c.status !== 'skipped').every(c => byId.get(c.id)?.status === 'passed');
 }

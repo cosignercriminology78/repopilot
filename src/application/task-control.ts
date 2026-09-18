@@ -1,5 +1,5 @@
-import type { Store } from './store.js';
-import { pause } from './control.js';
+import type { Store } from '../ports/store.js';
+import { pause } from '../shared/control.js';
 export class TaskCancelledError extends Error {
   constructor() { super('Task cancelled by operator.'); }
 }

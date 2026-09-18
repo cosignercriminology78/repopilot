@@ -1,0 +1,22 @@
+import { parseArgs } from 'node:util';
+export function parseCli(args: string[]) {
+  return parseArgs({ args, allowPositionals: true, options: {
+    config: { type: 'string' }, repo: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' },
+    once: { type: 'boolean' }, help: { type: 'boolean' }, format: { type: 'string' },
+    status: { type: 'string' }, limit: { type: 'string' }, offset: { type: 'string' }
+  } });
+}
+export type CliValues = ReturnType<typeof parseCli>['values'];
+export const help = `RepoPilot 0.1 — local-first repository verification
+
+  npm run dev -- check --config config.local.json --repo /path/to/repo --base main --head feature
+  npm run dev -- watch --config config.local.json [--once]
+  npm run dev -- tasks list --config config.local.json [--status running] [--limit 20] [--offset 0]
+  npm run dev -- tasks show TASK_ID --config config.local.json [--format json|markdown]
+  npm run dev -- tasks cancel TASK_ID --config config.local.json
+  npm run dev -- tasks resume TASK_ID --config config.local.json
+  npm run dev -- tasks rerun TASK_ID --config config.local.json
+
+check: verify local commit snapshots without modifying the source repository.
+watch: poll GitHub PRs; persist reports; optionally publish verified repair branches.
+Configuration lives outside tested snapshots. See README.md for Docker and authentication setup.`;

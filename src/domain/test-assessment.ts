@@ -1,5 +1,5 @@
+import { passed, preservesTests } from './test-evidence.js';
 import type { Report, TestPlan, TestResult } from './types.js';
-import { passed, preservesTests } from './test-results.js';
 
 type Assessment = NonNullable<Report['testAssessment']>;
 /** Interpret runner evidence; a model label alone never exempts a failing baseline. */

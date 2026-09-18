@@ -1,10 +1,10 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
-import { resolve, join } from 'node:path';
-import { checked, execute } from '../src/process.js';
-import { resolveCommit, snapshot } from '../src/git.js';
-import { Store } from '../src/store.js';
+import { join, resolve } from 'node:path';
+import test from 'node:test';
+import { Store } from '../src/adapters/storage/file-store.js';
+import { resolveCommit, snapshot } from '../src/adapters/storage/git.js';
+import { checked, execute } from '../src/shared/process.js';
 
 test('real Git snapshots and CLI compare pinned commits without editing checkout', async () => {
   await mkdir('.cache/tests', { recursive: true });

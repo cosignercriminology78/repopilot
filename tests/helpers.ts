@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { Store } from '../src/store.js';
-import { testId, failureFingerprint } from '../src/test-results.js';
-import type { Answer, Agent } from '../src/agent.js';
-import type { TestResult, TestCase, Report, PullRequest } from '../src/types.js';
-import { descriptionHash } from '../src/pipeline.js';
+import { Store } from '../src/adapters/storage/file-store.js';
+import type { Answer } from '../src/domain/agent-answer.js';
+import { descriptionHash } from '../src/domain/identity.js';
+import { failureFingerprint, testId } from '../src/domain/test-evidence.js';
+import type { PullRequest, Report, TestCase, TestResult } from '../src/domain/types.js';
+import type { Agent } from '../src/ports/agent.js';
 export const answer = (changes: Answer['changes'] = []): Answer => ({ findings: [], changes, scenarios: [], summary: 'fixture' });
 export const testCase = (file = 'test/original.test.js', status: TestCase['status'] = 'passed', failure = 'assert expected 1'): TestCase =>
   ({ id: testId(file, 'works'), file, name: 'works', status, durationMs: 1,

@@ -1,16 +1,16 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
-import { readFile } from 'node:fs/promises';
-import { execute } from '../src/process.js';
-import { classifyTestResult, sameFailures, testId } from '../src/test-results.js';
-import { result, testCase, answer } from './helpers.js';
-import { validatePlan } from '../src/agent.js';
-import { withFreshness, StaleTaskError, retry, RetryableError } from '../src/control.js';
-import { contextBatches } from '../src/context.js';
+import { contextBatches } from '../src/adapters/codex/context.js';
+import { classifyTestResult } from '../src/adapters/testing/test-results.js';
+import { validatePlan } from '../src/domain/repair.js';
+import { sameFailures, testId } from '../src/domain/test-evidence.js';
+import { retry, RetryableError, StaleTaskError, withFreshness } from '../src/shared/control.js';
+import { execute } from '../src/shared/process.js';
+import { answer } from './helpers.js';
 const nodeOutput = (cases: unknown[]) => JSON.stringify({ format: 'repopilot-node-v1', cases, infrastructureErrors: [] });
 test('zero, skipped, invalid, duplicate, outside-root and inconsistent reports cannot pass', () => {
   const c = { file: '/tmp/work/a.test.js', name: 'case', status: 'passed', durationMs: 1 };
@@ -37,7 +37,7 @@ test('Node reporter consumes real local synthetic test events, including nested 
   const root = await mkdtemp(resolve('.cache/tests/reporter-'));
   const reporter = resolve(root, 'reporter.mjs');
   const env = { ...process.env }; delete env.NODE_TEST_CONTEXT;
-  const source = await readFile(new URL('../src/node-reporter.ts', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/adapters/testing/node-reporter.ts', import.meta.url), 'utf8');
   await writeFile(reporter, ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } }).outputText);
   await writeFile(resolve(root, 'example.test.mjs'),
     'import { test, describe } from "node:test"; import assert from "node:assert/strict";\n' +

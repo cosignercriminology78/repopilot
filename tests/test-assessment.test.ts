@@ -1,11 +1,11 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assessPlan } from '../src/test-assessment.js';
-import { validatePlan } from '../src/agent.js';
-import { result, testCase, answer, agent, store } from './helpers.js';
-import { runPipeline } from '../src/pipeline.js';
-import { configSchema } from '../src/config.js';
-import type { TestPlan, TestCase } from '../src/types.js';
+import test from 'node:test';
+import { runPipeline } from '../src/application/pipeline.js';
+import { configSchema } from '../src/domain/config.js';
+import { validatePlan } from '../src/domain/repair.js';
+import { assessPlan } from '../src/domain/test-assessment.js';
+import type { TestCase, TestPlan } from '../src/domain/types.js';
+import { agent, answer, result, store, testCase } from './helpers.js';
 
 const file = 'test/feature.test.js', description = 'Add a new export that returns the greeting.';
 const plan: TestPlan = { summary: 'New greeting', tests: [{ path: file, content: 'test("works", () => {});' }],

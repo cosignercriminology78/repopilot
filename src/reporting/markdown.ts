@@ -1,4 +1,4 @@
-import type { Report } from './types.js';
+import type { Report } from '../domain/types.js';
 const safe = (value: string) => value.replace(/@/g, '@\u200b').replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[c]!);
 function block(value: string): string {
   const fence = '`'.repeat(Math.max(3, ...Array.from(value.matchAll(/`+/g), m => m[0].length + 1)));

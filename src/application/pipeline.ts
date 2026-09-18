@@ -1,24 +1,18 @@
-import type { Config } from './config.js';
-import { applyChanges, isTest, semanticFindings, validatePlan, type Agent } from './agent.js';
-import { introducedFindings, loadPolicy, partitionFindings, applyExceptions } from './policy.js';
-import { changedPaths } from './git.js';
-import { notRun, type Runner } from './runner.js';
-import { taskId, type Store } from './store.js';
-import { passed, sameFailures, preservesTests } from './test-results.js';
-import { assessPlan } from './test-assessment.js';
-import { withTaskCancellation, TaskCancelledError } from './task-control.js';
-import { RetryableError, StaleTaskError, throwIfAborted } from './control.js';
-import type { PullRequest, Report, Snapshot, TestResult } from './types.js';
+import type { Config } from '../domain/config.js';
+import { descriptionHash, pipelineId } from '../domain/identity.js';
+import { applyExceptions, introducedFindings, loadPolicy, partitionFindings } from '../domain/policy.js';
+import { applyChanges, isTest, semanticFindings, validatePlan } from '../domain/repair.js';
+import { changedPaths } from '../domain/snapshot.js';
+import type { RunInput } from '../domain/task.js';
+import { assessPlan } from '../domain/test-assessment.js';
+import { notRun, passed, preservesTests, sameFailures } from '../domain/test-evidence.js';
+import type { Report, Snapshot, TestResult } from '../domain/types.js';
+import { type Agent } from '../ports/agent.js';
+import { type Runner } from '../ports/runner.js';
+import { type Store } from '../ports/store.js';
+import { RetryableError, StaleTaskError, throwIfAborted } from '../shared/control.js';
+import { TaskCancelledError, withTaskCancellation } from './task-control.js';
 
-export interface RunInput { base: Snapshot; head: Snapshot; baseSha: string; headSha: string; pr?: PullRequest; description?: string;
-  repoPath?: string; runKey?: string; rerunOf?: string; }
-export function descriptionHash(pr?: PullRequest, description = ''): string {
-  return taskId(pr ? [pr.title, pr.body ?? ''] : description);
-}
-export function pipelineId(input: Pick<RunInput, 'pr' | 'description' | 'baseSha' | 'headSha' | 'runKey'>, config: Config): string {
-  return taskId({ version: 3, repository: config.repository, pr: input.pr?.number, base: input.baseSha, head: input.headSha,
-    description: descriptionHash(input.pr, input.description), config, runKey: input.runKey });
-}
 export async function runPipeline(input: RunInput, config: Config, store: Store, runner?: Runner, agent?: Agent, parent?: AbortSignal): Promise<Report> {
   return withTaskCancellation(store, pipelineId(input, config), signal => executePipeline(input, config, store, runner, agent, signal), parent);
 }

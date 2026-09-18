@@ -6,22 +6,23 @@ Pinned base/head and description → trusted policy → static + baseline/head s
 
 The controller owns configuration, credentials, task records and publication. Target code runs only in test containers. The agent receives bounded text context and proposes replacements.
 
-## Modules
+## Layers and dependencies
 
-| Module | Responsibility |
+| Layer | Responsibility |
 | --- | --- |
-| git.ts | Immutable text exports, portable paths, executable modes |
-| policy.ts | Scoped literal/AST rules, conflicts, historical matching, expiring exceptions |
-| context.ts | Changed-file batches, scoped instructions, relative imports, relevant tests |
-| agent.ts / agent-entry.ts | Codex SDK, structured citations, frozen plans, protected edits, usage budgets |
-| runner.ts / node-reporter.ts / test-results.ts | Offline containers, structured Node/Vitest results, identities and fingerprints |
-| control.ts / process.ts | Cancellation, freshness monitor, bounded retries, process-tree termination |
-| pipeline.ts | Task state, baseline evidence, test planning, repair gates and independent verification |
-| test-assessment.ts | Evidence-based classification of regressions and cited new behavior; original-test preservation |
-| github.ts / publication.ts | Read retries, durable publication retries, input freshness, Git modes, collision checks, draft PR publication |
-| report.ts / store.ts | Markdown summaries, atomic JSON records, previous-execution archives, exclusive lock |
-| cli.ts | Local check and serial GitHub watcher |
-| tasks.ts / task-control.ts | Task inspection, pinned replays, persistent cancellation and cooperative abort |
+| cli | Commands, configuration loading, output and dependency assembly |
+| application | Pipeline, watcher, task management and publication workflows |
+| domain | Pure rules, identities, snapshots, patch validation and test evidence |
+| ports | Agent, Runner, Store, Repository and GitHub contracts |
+| adapters | Codex/Docker, test reporters, GitHub HTTP, Git and filesystem implementations |
+| reporting | Markdown summaries |
+| shared | Processes, cancellation and retry primitives |
+
+Application depends on domain and ports; concrete adapters are injected by cli/bootstrap.ts. Domain and ports do not import adapters or application. Adapters do not depend on application. The GitHub client uses domain/identity.ts instead of importing the pipeline. Task replay receives Repository and GitHub ports rather than constructing concrete services.
+
+Agent response schema and repair validation live in domain; DockerCodexAgent lives in adapters/codex. Snapshot comparisons are pure domain operations; Git subprocesses and snapshot export are storage adapters. Framework-specific test parsing belongs to testing adapters, while pass/failure assessment belongs to domain.
+
+The small src/cli.ts entry and all command syntax remain stable. Docker entry/reporting paths follow the new layout. Architecture tests enforce dependency directions, absence of cycles, stable task IDs and fresh-build paths. See [source map](../src/README.md).
 
 ## State and recovery
 

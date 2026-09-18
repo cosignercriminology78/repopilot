@@ -1,10 +1,11 @@
-import type { PullRequest, Report } from './types.js';
-import { descriptionHash } from './pipeline.js';
-import { passed } from './test-results.js';
-import { markdownReport } from './report.js';
-import { RetryableError, retry, type RetryOptions } from './control.js';
+import { descriptionHash } from '../../domain/identity.js';
+import { passed } from '../../domain/test-evidence.js';
+import type { PullRequest, Report } from '../../domain/types.js';
+import type { GitHub as GitHubPort } from '../../ports/github.js';
+import { markdownReport } from '../../reporting/markdown.js';
+import { RetryableError, retry, type RetryOptions } from '../../shared/control.js';
 
-export class GitHub {
+export class GitHub implements GitHubPort {
   constructor(readonly repository: string, private token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN,
     private options: { signal?: AbortSignal; transport?: typeof fetch; retry?: RetryOptions } = {}) {
     if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) throw new Error('Invalid repository.');

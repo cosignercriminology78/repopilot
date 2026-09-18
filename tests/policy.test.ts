@@ -1,8 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
-import { instructions, loadPolicy, introducedFindings, checkPolicy, applyExceptions } from '../src/policy.js';
-import { safePath } from '../src/git.js';
-import { applyChanges, semanticFindings } from '../src/agent.js';
+import test from 'node:test';
+import { applyExceptions, checkPolicy, instructions, introducedFindings, loadPolicy } from '../src/domain/policy.js';
+import { applyChanges, semanticFindings } from '../src/domain/repair.js';
+import { safePath } from '../src/domain/snapshot.js';
 
 const rules = JSON.stringify({ rules: [{ id: 'fk', extensions: ['.sql'], forbiddenText: 'FOREIGN KEY', message: 'No foreign keys.' }] });
 test('candidate cannot delete trusted policy to pass review', () => {

@@ -1,9 +1,9 @@
-import type { GitHub } from './github.js';
-import type { Config } from './config.js';
-import type { Report } from './types.js';
-import type { Store } from './store.js';
-import { RetryableError } from './control.js';
-import { withTaskCancellation, TaskCancelledError } from './task-control.js';
+import type { Config } from '../domain/config.js';
+import type { Report } from '../domain/types.js';
+import type { GitHub } from '../ports/github.js';
+import type { Store } from '../ports/store.js';
+import { RetryableError } from '../shared/control.js';
+import { TaskCancelledError, withTaskCancellation } from './task-control.js';
 /** Persist intent before any write, so crash recovery consumes the same bounded budget. */
 export async function finishReport(report: Report, config: Config, store: Store,
   github: Pick<GitHub, 'current' | 'publish'>, signal?: AbortSignal): Promise<void> {

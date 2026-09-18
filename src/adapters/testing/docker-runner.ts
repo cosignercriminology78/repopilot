@@ -1,22 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, copyFile } from 'node:fs/promises';
+import { copyFile, mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Config } from './config.js';
-import { execute } from './process.js';
-import { writeSnapshot } from './git.js';
+import type { Config } from '../../domain/config.js';
+import type { Snapshot, TestResult } from '../../domain/types.js';
+import type { Runner } from '../../ports/runner.js';
+import { RetryableError, throwIfAborted } from '../../shared/control.js';
+import { execute } from '../../shared/process.js';
+import { writeSnapshot } from '../storage/git.js';
 import { classifyTestResult } from './test-results.js';
-import { throwIfAborted, RetryableError } from './control.js';
-import type { Snapshot, TestResult } from './types.js';
 
-export interface Runner { run(files: Snapshot, label: string, signal?: AbortSignal): Promise<TestResult>; }
-export const notRun = (): TestResult => ({ status: 'not_run', exitCode: null, output: 'No test runner configured.',
-  durationMs: 0, cases: [], structured: false });
 export function runnerCommand(config: NonNullable<Config['runner']>): string[] {
   if (config.command.some(arg => /^(--test-reporter|--reporter|--outputFile)/.test(arg))) throw new Error('Reporter flags are controller-owned.');
   if (config.reporter === 'node') return [config.command[0]!, '--test-reporter=/repopilot/node-reporter.mjs', ...config.command.slice(1)];
   if (config.reporter === 'vitest') return [...config.command, '--reporter=json'];
   return [...config.command];
+}
+export function nodeReporterUrl(): URL {
+  return new URL('../../../dist/adapters/testing/node-reporter.js', import.meta.url);
 }
 export class DockerRunner implements Runner {
   constructor(private config: NonNullable<Config['runner']>, private dataDir: string) {}
@@ -27,7 +28,7 @@ export class DockerRunner implements Runner {
     await mkdir(support, { recursive: true });
     await writeSnapshot(source, files);
     // Build first: the trusted reporter is JS and does not depend on repository packages.
-    if (this.config.reporter === 'node') await copyFile(fileURLToPath(new URL('../dist/node-reporter.js', import.meta.url)), resolve(support, 'node-reporter.mjs'));
+    if (this.config.reporter === 'node') await copyFile(fileURLToPath(nodeReporterUrl()), resolve(support, 'node-reporter.mjs'));
     try {
       const result = await execute('docker', ['run', '--rm', '--name', name,
         '--network', 'none', '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
