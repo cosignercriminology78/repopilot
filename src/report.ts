@@ -12,7 +12,11 @@ export function markdownReport(report: Report): string {
     '', 'Historical findings: ' + report.historical.length, 'Suppressed findings: ' + report.suppressed.length,
     ...report.suppressed.map(s => '- ' + safe(s.finding.ruleId + ': ' + s.reason + ' (expires ' + s.expiresAt + ')')),
     '', '## Test plan', safe(report.plan?.summary ?? 'No generated test plan.'),
-    ...(report.plan?.scenarios.map(s => '- ' + safe(s.testFile + ': ' + s.name + ' — ' + s.requirement)) ?? []),
+    ...(report.plan?.scenarios.map(s => '- ' + safe('[' + s.kind + '] ' + s.testFile + ': ' + s.name + ' — ' + s.requirement
+      + (s.requirementQuote ? ' | Requirement quote: ' + s.requirementQuote : ''))) ?? []),
+    '', '## Test assessment',
+    ...(report.testAssessment?.cases.map(c => '- ' + safe(c.outcome + ' ' + c.id + ': ' + c.reason)) ?? []),
+    ...(report.testAssessment?.reasons.map(reason => '- ' + safe(reason)) ?? []),
     '', '## Runner evidence'];
   for (const item of report.evidence) {
     lines.push('', '### ' + safe(item.phase) + ' / attempt ' + item.attempt,

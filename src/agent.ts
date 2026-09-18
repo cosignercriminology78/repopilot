@@ -17,7 +17,9 @@ export const answerSchema = z.object({
     ruleQuote: z.string().min(3), evidence: z.string().min(1)
   }).strict()).max(100),
   changes: z.array(z.object({ path: z.string(), content: z.string().max(200000) }).strict()).max(20),
-  scenarios: z.array(z.object({ name: z.string().min(1), requirement: z.string().min(1), testFile: z.string() }).strict()).max(50),
+  scenarios: z.array(z.object({ name: z.string().min(1), requirement: z.string().min(1), testFile: z.string(),
+    kind: z.enum(['regression', 'new_behavior']).optional(), requirementQuote: z.string().min(8).optional()
+  }).strict()).max(50),
   summary: z.string()
 }).strict();
 export type Answer = z.infer<typeof answerSchema>;
@@ -48,7 +50,7 @@ export function applyChanges(head: Snapshot, changes: RepairChange[]): Snapshot 
   }
   return result;
 }
-export function validatePlan(answer: Answer, head: Snapshot): TestPlan {
+export function validatePlan(answer: Answer, head: Snapshot, description = ''): TestPlan {
   if (!answer.scenarios.length || !answer.changes.length) throw new Error('Agent did not provide executable tests and scenarios.');
   const paths = new Set(answer.changes.map(c => c.path));
   if (answer.changes.some(c => head.has(c.path) || !isTest(c.path) || !/\.[cm]?[jt]sx?$/.test(c.path))) {
@@ -57,13 +59,23 @@ export function validatePlan(answer: Answer, head: Snapshot): TestPlan {
   if (answer.scenarios.some(s => !paths.has(s.testFile)) || [...paths].some(p => !answer.scenarios.some(s => s.testFile === p))) {
     throw new Error('Every generated test file must map to a planned scenario.');
   }
+  const scenarios = answer.scenarios.map(s => ({ ...s, kind: s.kind ?? 'regression' as const }));
+  for (const scenario of scenarios) {
+    if (scenario.kind === 'new_behavior' && (!scenario.requirementQuote || scenario.requirementQuote.trim().length < 8
+      || !normalize(description).includes(normalize(scenario.requirementQuote)))) {
+      throw new Error('New behavior requires an exact requirement quote from the PR description.');
+    }
+    if (scenarios.some(other => other.testFile === scenario.testFile && other.kind !== scenario.kind)) {
+      throw new Error('Separate new behavior and regression scenarios into different test files.');
+    }
+  }
   applyChanges(head, answer.changes);
   const testFiles = new Map(answer.changes.map(c => [c.path, c.content]));
   const policy = policySchema.parse({ rules: ['test', 'it', 'describe'].flatMap(fn => ['skip', 'todo', 'only'].map(modifier => ({
     id: fn + '-' + modifier, kind: 'forbid-call', callee: fn + '.' + modifier, message: 'Generated tests cannot skip, focus or remain TODO.'
   }))) });
   if (checkPolicy(testFiles, policy).length) throw new Error('Generated tests contain disabled/focused tests or invalid syntax.');
-  return { summary: answer.summary, scenarios: answer.scenarios, tests: answer.changes };
+  return { summary: answer.summary, scenarios, tests: answer.changes };
 }
 const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
 export function semanticFindings(answer: Answer, base: Snapshot, head: Snapshot, paths = changedPaths(base, head)): Finding[] {

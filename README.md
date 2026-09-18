@@ -81,7 +81,9 @@ Set OPENAI_API_KEY in the controller environment; only the agent container recei
 
 agent.enabled enables semantic review and test planning. agent.repair enables repair proposals. The SDK runs in a separate container with no writable host checkout; the controller applies validated file replacements to independent snapshots.
 
-Automatic repair needs passing baseline evidence. Generated tests run on both base and head; if new-feature requirements do not pass on base, the task conservatively requires human review. Regressions must repeat with identical failing identities/fingerprints. Repair candidates must preserve and pass original base/head/generated cases and pass static/semantic rechecks. Existing tests, manifests, configuration, policies and hidden paths are protected.
+Automatic repair needs passing original baseline evidence. Generated scenarios are regression (default) or new_behavior, in separate files. New behavior requires an exact requirementQuote from the PR title/body. For the same executed case, base-pass/head-fail is a regression; base-fail/head-pass is accepted only for cited new behavior. Both-fail, skipped/missing cases, execution errors and changes to original test results require review. A model label alone never overrides runner evidence.
+
+A PR may combine verified new behavior with regressions. Regressions must repeat with identical failing identities/fingerprints. Repair candidates must preserve and pass original base/head/generated cases and pass static/semantic rechecks. Missing base exports must be checked inside executing test cases rather than crashing top-level imports. Reports retain intent, requirement quotes and per-case classifications. Existing tests, manifests, configuration, policies and hidden paths are protected.
 
 Publication rechecks SHAs and description. Existing branches/PRs are reusable only when their parent/tree match the verified result. No force push or automatic merge.
 

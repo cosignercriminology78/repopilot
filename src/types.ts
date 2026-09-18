@@ -23,7 +23,7 @@ export interface PullRequest {
 export interface RepairChange { path: string; content: string; }
 export interface TestPlan {
   summary: string;
-  scenarios: { name: string; requirement: string; testFile: string }[];
+  scenarios: { name: string; requirement: string; testFile: string; kind: 'regression' | 'new_behavior'; requirementQuote?: string }[];
   tests: RepairChange[];
 }
 export interface TestEvidence { phase: string; attempt: number; result: TestResult; }
@@ -36,6 +36,7 @@ export interface Report {
   semantic: 'not_run' | 'completed';
   tests: { base: TestResult; head: TestResult; repaired?: TestResult };
   plan?: TestPlan; evidence: TestEvidence[]; repairs: RepairAttempt[];
+  testAssessment?: { eligible: boolean; reasons: string[]; cases: { id: string; outcome: 'regression' | 'new_behavior_verified' | 'preserved' | 'unresolved'; reason: string }[] };
   changes: RepairChange[]; attempts: number; notes: string[]; createdAt: string;
   executions: number; retryAfter?: string; retryable: boolean;
   agentUsage?: { calls: number; tokens: number };

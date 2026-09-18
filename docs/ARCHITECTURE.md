@@ -17,6 +17,7 @@ The controller owns configuration, credentials, task records and publication. Ta
 | runner.ts / node-reporter.ts / test-results.ts | Offline containers, structured Node/Vitest results, identities and fingerprints |
 | control.ts / process.ts | Cancellation, freshness monitor, bounded retries, process-tree termination |
 | pipeline.ts | Task state, baseline evidence, test planning, repair gates and independent verification |
+| test-assessment.ts | Evidence-based classification of regressions and cited new behavior; original-test preservation |
 | github.ts / publication.ts | Read retries, durable publication retries, input freshness, Git modes, collision checks, draft PR publication |
 | report.ts / store.ts | Markdown summaries, atomic JSON records, previous-execution archives, exclusive lock |
 | cli.ts | Local check and serial GitHub watcher |
@@ -35,7 +36,7 @@ GitHub GET calls retry selected rate-limit/server failures with bounded exponent
 
 1. Parse structured results. A successful command with zero/all-skipped tests does not pass.
 2. Record original base/head cases. Model-generated tests are additional files with scenario mappings.
-3. Execute the frozen tests on base/head and check discovery. A missing passing baseline blocks automatic repair, including ambiguous new-feature behavior.
+3. Execute frozen tests on base/head and check identical discovery. Original baseline tests must stay green. Generated base-pass/head-fail cases are regressions; base-fail/head-pass cases qualify as new behavior only with a validated PR requirement quote and explicit scenario type. Both-fail and execution errors require review. Generated tests cannot alter original test outcomes. Mixed new-behavior/regression plans remain eligible when every case has unambiguous evidence.
 4. For regressions, repeat head and require identical failing identities and fingerprints. This detects changing failures; it is not statistical proof of non-flakiness.
 5. Repair production source only. Recheck static rules, run tests, preserve original base/head/generated case identities, and repeat semantic review against trusted rules.
 6. Publish only verified results on still-current input. Git trees preserve executable bits. A matching existing PR must have the exact expected parent/tree.

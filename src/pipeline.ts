@@ -5,6 +5,7 @@ import { changedPaths } from './git.js';
 import { notRun, type Runner } from './runner.js';
 import { taskId, type Store } from './store.js';
 import { passed, sameFailures, preservesTests } from './test-results.js';
+import { assessPlan } from './test-assessment.js';
 import { RetryableError, StaleTaskError, throwIfAborted } from './control.js';
 import type { PullRequest, Report, Snapshot, TestResult } from './types.js';
 
@@ -13,8 +14,9 @@ export function descriptionHash(pr?: PullRequest, description = ''): string {
   return taskId(pr ? [pr.title, pr.body ?? ''] : description);
 }
 export async function runPipeline(input: RunInput, config: Config, store: Store, runner?: Runner, agent?: Agent, parent?: AbortSignal): Promise<Report> {
-  const hash = descriptionHash(input.pr, input.description);
-  const id = taskId({ version: 2, repository: config.repository, pr: input.pr?.number, base: input.baseSha, head: input.headSha, description: hash, config });
+  const description = input.pr ? `${input.pr.title}\n${input.pr.body ?? ''}` : input.description ?? '';
+  const hash = descriptionHash(input.pr, description);
+  const id = taskId({ version: 3, repository: config.repository, pr: input.pr?.number, base: input.baseSha, head: input.headSha, description: hash, config });
   const previous = await store.read(id);
   if (previous && ['running', 'cancelled'].includes(previous.status) && previous.executions >= config.retry.maxTaskExecutions) {
     previous.status = 'error'; previous.retryable = false;
@@ -47,37 +49,35 @@ export async function runPipeline(input: RunInput, config: Config, store: Store,
     if (policyChanged) report.notes.push('Policy changes require maintainer review; using base policy.');
     let baselineSemantic: ReturnType<typeof semanticFindings> = [];
     if (agent) {
-      baselineSemantic = semanticFindings(await agent.review(input.base, input.base, input.description ?? '', signal, paths), input.base, input.base, paths);
-      const current = semanticFindings(await agent.review(input.base, input.head, input.description ?? '', signal, paths), input.base, input.head, paths);
+      baselineSemantic = semanticFindings(await agent.review(input.base, input.base, description, signal, paths), input.base, input.base, paths);
+      const current = semanticFindings(await agent.review(input.base, input.head, description, signal, paths), input.base, input.head, paths);
       const semantic = partitionFindings(baselineSemantic, current, input.base, input.head);
       report.findings.push(...semantic.findings); report.historical.push(...semantic.historical); report.semantic = 'completed';
     }
     Object.assign(report, applyExceptions(report.findings, policy));
     if (runner) { report.tests.base = await run(input.base, 'base'); report.tests.head = await run(input.head, 'head'); }
     let working = input.head, red = report.tests.head, baseline = report.tests.base;
+    let eligible = passed(baseline);
     if (agent && runner && !policyChanged && passed(baseline) && ['passed', 'failed'].includes(red.status)) {
-      report.plan = validatePlan(await agent.plan(input.base, input.head, input.description ?? '', signal), input.head);
+      report.plan = validatePlan(await agent.plan(input.base, input.head, description, signal), input.head, description);
       working = applyChanges(input.head, report.plan.tests);
       baseline = await run(applyChanges(input.base, report.plan.tests), 'planned-base');
       red = await run(working, 'planned-head');
       for (const test of report.plan.tests) {
         const cases = red.cases.filter(c => c.file === test.path);
         if (!cases.length || cases.some(c => c.status === 'skipped')) throw new Error('Generated tests were not fully executed: ' + test.path);
-        const baseCases = baseline.cases.filter(c => c.file === test.path);
-        if (!baseCases.length || baseCases.some(c => c.status !== 'passed') || cases.some(c => !baseCases.some(b => b.id === c.id))) {
-          report.notes.push('Generated test identities lack a passing baseline: ' + test.path);
-          baseline = { ...baseline, status: 'not_run', reason: 'Generated test baseline is incomplete.' };
-        }
       }
-      if (!preservesTests(report.tests.head, red) && red.status === 'passed') throw new Error('Planning removed existing test coverage.');
+      report.testAssessment = assessPlan(report.plan, report.tests.base, report.tests.head, baseline, red);
+      eligible = report.testAssessment.eligible;
+      report.notes.push(...report.testAssessment.reasons);
     }
-    const regression = passed(baseline) && red.status === 'failed' && red.structured;
+    const regression = eligible && red.status === 'failed' && red.structured;
     if (!passed(report.tests.base)) report.notes.push('Base tests already fail or lack structured passing evidence; automatic repair is blocked.');
-    if (!passed(baseline)) report.notes.push('Generated tests do not pass on base; maintainer review is required.');
+    if (!eligible) report.notes.push('Test evidence requires maintainer review.');
     const preservedBase = preservesTests(report.tests.base, report.tests.head);
     if (passed(report.tests.head) && !preservedBase) report.notes.push('Head removed or skipped baseline tests; maintainer review required.');
-    report.status = !report.findings.length && passed(red) && passed(baseline) && preservedBase && !policyChanged ? 'passed' : 'needs_attention';
-    if (agent && runner && config.agent.repair && !policyChanged && passed(baseline)
+    report.status = !report.findings.length && passed(red) && eligible && preservedBase && !policyChanged ? 'passed' : 'needs_attention';
+    if (agent && runner && config.agent.repair && !policyChanged && eligible
       && (regression || (passed(red) && report.findings.some(f => f.severity === 'error')))) {
       if (regression && !sameFailures(red, await run(working, 'repeat-head'))) {
         report.notes.push('Failure identities or fingerprints changed on repetition; repair blocked.');
@@ -85,7 +85,7 @@ export async function runPipeline(input: RunInput, config: Config, store: Store,
         let feedback = '';
         for (let attempt = 1; attempt <= config.agent.maxAttempts; attempt++) {
           throwIfAborted(signal); report.attempts = attempt;
-          const answer = await agent.repair(input.base, working, JSON.stringify({ description: input.description,
+          const answer = await agent.repair(input.base, working, JSON.stringify({ description,
             findings: report.findings, failedTests: red, plan: report.plan, previousAttempt: feedback }), signal);
           const record = { number: attempt, changes: answer.changes, summary: answer.summary, accepted: false, reason: '' };
           report.repairs.push(record);
@@ -99,7 +99,7 @@ export async function runPipeline(input: RunInput, config: Config, store: Store,
             if (!passed(report.tests.repaired) || !preservesTests(red, report.tests.repaired)
               || !preservesTests(report.tests.head, report.tests.repaired)
               || !preservesTests(report.tests.base, report.tests.repaired)) throw new Error('Repair did not pass the same test identities.');
-            const reviewed = semanticFindings(await agent.review(input.base, candidate, input.description ?? '', signal),
+            const reviewed = semanticFindings(await agent.review(input.base, candidate, description, signal),
               input.base, candidate);
             const semantic = partitionFindings(baselineSemantic, reviewed, input.base, candidate);
             if (applyExceptions(semantic.findings, policy).findings.some(f => f.severity === 'error')) throw new Error('Repair has unresolved semantic findings.');
