@@ -13,6 +13,7 @@ RepoPilot watches pull requests, checks trusted base-branch rules, generates tes
 - Nested AGENTS.md semantic review with verbatim rule/code citations and historical finding comparison.
 - Proactive test plans and new test files, frozen before production-code repair.
 - Structured Node and Vitest results: test discovery, stable identities, repeated failure fingerprints and same-case verification.
+- Monorepo working directories, multiple named test commands and disposable dependency services; see [test environments](docs/TEST-ENVIRONMENTS.md).
 - Bounded repair attempts, task retries, publication retries, call/token budgets and process-tree cleanup.
 - Separate autofix branches/draft PRs, executable-mode preservation and collision-safe publication recovery.
 - Atomic JSON reports, Markdown evidence summaries, previous-execution archives and exclusive controller lock.
@@ -41,7 +42,7 @@ npm run dev -- watch --config config.local.json
 
 Local check never publishes or edits the source checkout. Watch polls non-draft same-repository PRs, excluding autofix branches. Publishing requires publish=true.
 
-The default reporter is node with node --test. Build first to produce the trusted reporter. For Vitest, set reporter=vitest and use an explicit vitest run command backed by a trusted image containing pinned dependencies. Tests have no network and no dependency installation. Reporter flags belong to the controller. reporter=command collects output only and cannot verify or publish.
+The default reporter is node with node --test. Build first to produce the trusted reporter. For Vitest, set reporter=vitest and use an explicit vitest run command backed by a trusted image containing pinned dependencies. Tests have no network by default; configured services use a disposable internal Docker network. Images and dependencies must be provisioned beforehand. Reporter flags belong to the controller. reporter=command collects output only and cannot verify or publish.
 
 Omit runner for policy-only review; tests remain not_run. Zero/all-skipped tests, malformed reports and missing test identities never count as passing.
 

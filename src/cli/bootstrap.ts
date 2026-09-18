@@ -3,6 +3,7 @@ import { GitHub } from '../adapters/github/client.js';
 import { Store } from '../adapters/storage/file-store.js';
 import { gitRepository } from '../adapters/storage/repository.js';
 import { DockerRunner } from '../adapters/testing/docker-runner.js';
+import { describeTestEnvironment } from '../domain/runner-config.js';
 import { help, parseCli } from './args.js';
 import { check } from './commands/check.js';
 import { inspectTasks, runTask } from './commands/tasks.js';
@@ -25,7 +26,8 @@ export async function main(args: string[], output: Output = standardOutput): Pro
   try {
     const runtime: Runtime = { config, store, repository: gitRepository, signal: abort.signal,
       runner: config.runner ? new DockerRunner(config.runner, config.dataDir) : undefined,
-      agent: config.agent.enabled ? new DockerCodexAgent(config.agent, config.dataDir) : undefined,
+      agent: config.agent.enabled ? new DockerCodexAgent(config.agent, config.dataDir,
+        config.runner ? describeTestEnvironment(config.runner) : undefined) : undefined,
       github: new GitHub(config.repository, undefined, { signal: abort.signal, retry: config.retry }) };
     if (command === 'watch') { await watchCommand(values, runtime, output); return 0; }
     const report = command === 'check' ? await check(values, runtime) : await runTask(action!, task!, runtime);

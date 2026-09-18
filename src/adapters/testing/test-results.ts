@@ -5,11 +5,12 @@ import { failureFingerprint, testId } from '../../domain/test-evidence.js';
 import type { TestCase, TestResult } from '../../domain/types.js';
 import type { ProcessResult } from '../../shared/process.js';
 
-export function testFile(file: string, root = '/tmp/work'): string {
+export function testFile(file: string, root = '/tmp/work', cwd = ''): string {
   const normalized = (file.startsWith('file:') ? fileURLToPath(file) : file).replaceAll('\\', '/');
   const prefix = root.replaceAll('\\', '/').replace(/\/$/, '') + '/';
-  const relative = normalized.startsWith(prefix) ? normalized.slice(prefix.length) : normalized.replace(/^\.\//, '');
-  if (!relative || posix.isAbsolute(relative) || /^[A-Za-z]:/.test(relative) || relative.split('/').includes('..')) {
+  const relative = normalized.startsWith(prefix) ? normalized.slice(prefix.length)
+    : posix.isAbsolute(normalized) || /^[A-Za-z]:/.test(normalized) ? normalized : posix.join(cwd, normalized);
+  if (!normalized || relative === '.' || posix.isAbsolute(relative) || /^[A-Za-z]:/.test(relative) || relative.split('/').includes('..')) {
     throw new Error('Test result file is outside the tested snapshot.');
   }
   return relative;
@@ -27,7 +28,7 @@ const vitestSchema = z.object({
     }))
   }))
 });
-export function parseCases(output: string, adapter: 'node' | 'vitest', root?: string): { cases: TestCase[]; errors: string[] } {
+export function parseCases(output: string, adapter: 'node' | 'vitest', root?: string, cwd?: string): { cases: TestCase[]; errors: string[] } {
   const raw = JSON.parse(output);
   let rows: { file: string; name: string; status: TestCase['status']; durationMs: number; failure?: string }[];
   const errors: string[] = [];
@@ -46,7 +47,7 @@ export function parseCases(output: string, adapter: 'node' | 'vitest', root?: st
   }
   const ids = new Set<string>();
   const cases = rows.map(row => {
-    const file = testFile(row.file, root), id = testId(file, row.name);
+    const file = testFile(row.file, root, cwd), id = testId(file, row.name);
     if (ids.has(id)) throw new Error('Ambiguous duplicate test identity: ' + id);
     ids.add(id);
     if (row.status === 'failed' && !row.failure?.trim()) errors.push('Failed test has no failure evidence.');
@@ -55,14 +56,14 @@ export function parseCases(output: string, adapter: 'node' | 'vitest', root?: st
   return { cases, errors };
 }
 export function classifyTestResult(result: ProcessResult, adapter: 'node' | 'vitest' | 'command',
-  durationMs: number, root?: string): TestResult {
+  durationMs: number, root?: string, cwd?: string): TestResult {
   const common = { exitCode: result.code, output: (result.stdout + result.stderr).slice(-100000), durationMs, cases: [] as TestCase[], structured: false };
   if (result.timedOut || result.code === null || [125, 126, 127, 137].includes(result.code)) {
     return { ...common, status: 'error', reason: result.timedOut ? 'Test execution timed out.' : 'Runner infrastructure failed.' };
   }
   if (adapter === 'command') return { ...common, status: 'not_run', reason: 'Command-only results cannot verify test cases.' };
   try {
-    const { cases, errors } = parseCases(result.stdout, adapter, root);
+    const { cases, errors } = parseCases(result.stdout, adapter, root, cwd);
     const structured = { ...common, cases, structured: true };
     if (errors.length) return { ...structured, status: 'error', reason: errors.join('\n') };
     if (!cases.some(c => c.status !== 'skipped')) return { ...structured, status: 'not_run', reason: 'No executed tests (zero or all skipped).' };

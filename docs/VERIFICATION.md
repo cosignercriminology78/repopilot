@@ -1,8 +1,10 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 52 offline regression tests and compilation.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 63 offline regression tests and compilation.
 
 Coverage includes:
+
+- Mock Docker multi-command aggregation, working directories, stable legacy identities, service readiness/budgets, isolated resource naming, partial startup failure, cancellation and cleanup failure gates.
 
 - Layer dependency/cycle enforcement, stable version-three task IDs, and clean-build CLI/Codex/reporter path resolution.
 

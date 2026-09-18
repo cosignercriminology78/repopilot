@@ -4,7 +4,7 @@ This is a developer preview. Run it on a dedicated development machine/VM, not a
 
 - Trusted: controller configuration and explicitly approved base-branch policy.
 - Untrusted: PR descriptions, head files, model output, test output.
-- Test containers: no network, no host credentials, read-only source bind, disposable tmpfs workspace, non-root user, dropped capabilities, resource limits.
+- Test containers: no network by default, no forwarded host credentials, read-only source bind, disposable tmpfs workspace, non-root user, dropped capabilities, resource limits. Configured dependency services enable a disposable internal Docker network with no published host ports. Internal networks are not a complete host boundary; restrict access to host gateway services using worker VM/firewall policy. See [test environments](docs/TEST-ENVIRONMENTS.md).
 - Agent container: model network access is necessary; it receives an OpenAI key and repository text, but no GitHub token or host checkout. Prompt instructions and SDK sandbox settings are defense in depth, not a guarantee against prompt injection. Restrict worker egress at the VM/firewall layer when handling sensitive sources.
 - Publisher: only accepts verified reports, targets an independent branch, rechecks source revisions, never merges or force-pushes.
 - Snapshots: fail closed for symlinks, submodules, unsupported binaries, case collisions and path traversal. Git executable modes are retained in snapshots, exports and published trees; Windows host filesystem semantics may differ from Linux modes.

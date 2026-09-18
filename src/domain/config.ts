@@ -1,18 +1,11 @@
 import { z } from 'zod';
+import { runnerSchema } from './runner-config.js';
 
-const command = z.array(z.string().min(1)).min(1);
 export const configSchema = z.object({
   repository: z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
   dataDir: z.string().default('.repopilot-data'),
   pollSeconds: z.number().int().min(15).default(60),
-  runner: z.object({
-    image: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/).default('node:22-bookworm-slim'),
-    command,
-    reporter: z.enum(['node', 'vitest', 'command']).default('node'),
-    timeoutSeconds: z.number().int().min(1).max(1800).default(300),
-    memory: z.string().regex(/^\d+[mg]$/).default('1g'),
-    cpus: z.number().positive().max(16).default(2)
-  }).optional(),
+  runner: runnerSchema.optional(),
   agent: z.object({
     enabled: z.boolean().default(false),
     repair: z.boolean().default(false),

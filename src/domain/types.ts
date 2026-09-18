@@ -9,11 +9,13 @@ export interface TestCase {
   id: string; file: string; name: string;
   status: 'passed' | 'failed' | 'skipped'; durationMs: number;
   failure?: string; fingerprint?: string;
+  command?: string;
 }
 export interface TestResult {
   status: 'passed' | 'failed' | 'error' | 'not_run';
   exitCode: number | null; output: string; durationMs: number;
   cases: TestCase[]; structured: boolean; reason?: string;
+  commands?: (Omit<TestResult, 'commands'> & { name: string; cwd: string })[];
 }
 export interface PullRequest {
   number: number; title: string; body: string; state: string; draft: boolean;

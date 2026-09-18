@@ -1,0 +1,21 @@
+{
+  "repository": "owner/repository",
+  "runner": {
+    "image": "node:22-bookworm-slim",
+    "timeoutSeconds": 300,
+    "env": { "REDIS_URL": "redis://cache:6379" },
+    "commands": [
+      { "name": "api", "cwd": "packages/api", "command": ["node", "--test"], "timeoutSeconds": 120 },
+      { "name": "web", "cwd": "packages/web", "command": ["node", "--test"], "timeoutSeconds": 120 }
+    ],
+    "services": [
+      {
+        "name": "cache",
+        "image": "redis:7-alpine",
+        "command": ["redis-server", "--appendonly", "no", "--protected-mode", "no"],
+        "tmpfs": ["/data"],
+        "readiness": { "command": ["redis-cli", "ping"], "timeoutSeconds": 30 }
+      }
+    ]
+  }
+}

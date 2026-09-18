@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { Answer } from '../../domain/agent-answer.js';
 import { answerSchema } from '../../domain/agent-answer.js';
 import type { Config } from '../../domain/config.js';
+import type { describeTestEnvironment } from '../../domain/runner-config.js';
 import type { Snapshot } from '../../domain/types.js';
 import type { Agent } from '../../ports/agent.js';
 import { RetryableError, throwIfAborted } from '../../shared/control.js';
@@ -14,7 +15,8 @@ import { contextBatches } from './context.js';
 export class DockerCodexAgent implements Agent {
   private calls = 0;
   private tokens = 0;
-  constructor(private config: Config['agent'], private dataDir: string) {}
+  constructor(private config: Config['agent'], private dataDir: string,
+    private testEnvironment?: ReturnType<typeof describeTestEnvironment>) {}
   resetBudget() { this.calls = 0; this.tokens = 0; }
   usage() { return { calls: this.calls, tokens: this.tokens }; }
   review(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, paths?: string[]) { return this.call('review', base, head, description, signal, paths); }
@@ -28,7 +30,7 @@ export class DockerCodexAgent implements Agent {
       throwIfAborted(signal);
       if (this.calls >= this.config.maxCalls || this.tokens >= this.config.maxTokens) throw new Error('Agent task budget exhausted.');
       this.calls++;
-      const input = JSON.stringify({ mode, model: this.config.model, context, ...batch });
+      const input = JSON.stringify({ mode, model: this.config.model, context, testEnvironment: this.testEnvironment, ...batch });
       if (Buffer.byteLength(input) > 500000) throw new Error('Evidence/context exceeds per-call budget.');
       const name = 'repopilot-agent-' + randomUUID(), root = resolve(this.dataDir, 'work', name);
       await mkdir(root, { recursive: true }); await writeFile(resolve(root, 'input.json'), input);
