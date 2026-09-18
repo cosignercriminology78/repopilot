@@ -23,6 +23,8 @@ export interface PullRequest {
   head: { sha: string; ref: string; repo: { full_name: string } | null };
   base: { sha: string; ref: string; repo: { full_name: string } };
 }
+export interface Issue { number: number; title: string; body: string | null; state: string; pull_request?: unknown; }
+export interface IssueSource { number: number; title: string; body: string; branch: string; }
 export interface RepairChange { path: string; content: string; }
 export interface TestPlan {
   summary: string;
@@ -32,6 +34,7 @@ export interface TestPlan {
 export interface TestEvidence { phase: string; attempt: number; result: TestResult; execution?: number; }
 export interface RepairAttempt { number: number; changes: RepairChange[]; summary: string; accepted: boolean; reason?: string; }
 export interface Report {
+  issue?: IssueSource;
   schemaVersion: 2; id: string; repository: string; pr?: number; base: string; head: string;
   descriptionHash: string;
   status: 'running' | 'passed' | 'needs_attention' | 'verified' | 'published' | 'stale' | 'cancelled' | 'error';
@@ -46,6 +49,6 @@ export interface Report {
   agentUsage?: { calls: number; tokens: number };
   pullRequestUrl?: string;
   publication?: { attempts: number; retryAfter?: string; error?: string; retryable: boolean };
-  replay?: { repoPath: string; description: string; pr?: PullRequest; runKey?: string };
+  replay?: { repoPath: string; description: string; pr?: PullRequest; issue?: IssueSource; runKey?: string };
   rerunOf?: string;
 }

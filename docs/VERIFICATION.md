@@ -1,8 +1,11 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 77 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 89 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
 
 Coverage includes:
+
+- Issue reproduction/repair, requirement quotes, unstable failures, Issue/target freshness, draft PR targeting/linking, replay identity and publish opt-in.
+- pytest/JUnit XML and Go JSON parsing, source mapping, malformed/contradictory reports, missing events, entity rejection and generated Python/Go/Java tests.
 
 - Controller ownership, stale/unknown/foreign locks, concurrent acquisition, recovery preview invalidation, exact Docker ownership rechecks, partial failures and interrupted-evidence retention.
 

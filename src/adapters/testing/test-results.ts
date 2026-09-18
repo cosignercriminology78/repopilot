@@ -2,7 +2,9 @@ import { posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { failureFingerprint, testId } from '../../domain/test-evidence.js';
-import type { TestCase, TestResult } from '../../domain/types.js';
+import type { Snapshot, TestCase, TestResult } from '../../domain/types.js';
+import type { TestCommand } from '../../domain/runner-config.js';
+import { goRows, junitRows } from './language-reports.js';
 import type { ProcessResult } from '../../shared/process.js';
 
 export function testFile(file: string, root = '/tmp/work', cwd = ''): string {
@@ -28,13 +30,17 @@ const vitestSchema = z.object({
     }))
   }))
 });
-export function parseCases(output: string, adapter: 'node' | 'vitest', root?: string, cwd?: string): { cases: TestCase[]; errors: string[] } {
-  const raw = JSON.parse(output);
+export function parseCases(output: string, adapter: Exclude<TestCommand['reporter'], 'command'>, root?: string, cwd?: string, files: Snapshot = new Map()): { cases: TestCase[]; errors: string[] } {
   let rows: { file: string; name: string; status: TestCase['status']; durationMs: number; failure?: string }[];
   const errors: string[] = [];
-  if (adapter === 'node') {
+  if (adapter === 'go' || adapter === 'pytest' || adapter === 'junit') {
+    const parsed = adapter === 'go' ? goRows(output, files) : junitRows(output, files);
+    rows = parsed.rows; errors.push(...parsed.errors);
+  } else if (adapter === 'node') {
+    const raw = JSON.parse(output);
     const report = nodeSchema.parse(raw); rows = report.cases; errors.push(...report.infrastructureErrors);
   } else {
+    const raw = JSON.parse(output);
     const report = vitestSchema.parse(raw);
     rows = report.testResults.flatMap(suite => {
       if (!suite.assertionResults.length && suite.message) errors.push(suite.message);
@@ -47,6 +53,7 @@ export function parseCases(output: string, adapter: 'node' | 'vitest', root?: st
   }
   const ids = new Set<string>();
   const cases = rows.map(row => {
+    if (!Number.isFinite(row.durationMs) || row.durationMs < 0) throw new Error('Invalid test duration.');
     const file = testFile(row.file, root, cwd), id = testId(file, row.name);
     if (ids.has(id)) throw new Error('Ambiguous duplicate test identity: ' + id);
     ids.add(id);
@@ -55,15 +62,16 @@ export function parseCases(output: string, adapter: 'node' | 'vitest', root?: st
   });
   return { cases, errors };
 }
-export function classifyTestResult(result: ProcessResult, adapter: 'node' | 'vitest' | 'command',
-  durationMs: number, root?: string, cwd?: string): TestResult {
+export function classifyTestResult(result: ProcessResult, adapter: TestCommand['reporter'],
+  durationMs: number, root?: string, cwd?: string, files?: Snapshot): TestResult {
   const common = { exitCode: result.code, output: (result.stdout + result.stderr).slice(-100000), durationMs, cases: [] as TestCase[], structured: false };
   if (result.timedOut || result.code === null || [125, 126, 127, 137].includes(result.code)) {
     return { ...common, status: 'error', failure: { kind: 'environment', retryable: result.timedOut || result.code === 125 || result.code === 137 }, reason: result.timedOut ? 'Test execution timed out.' : 'Runner infrastructure failed.' };
   }
   if (adapter === 'command') return { ...common, status: 'not_run', reason: 'Command-only results cannot verify test cases.' };
   try {
-    const { cases, errors } = parseCases(result.stdout, adapter, root, cwd);
+    const { cases, errors } = parseCases(result.stdout, adapter, root, cwd, files);
+    if (files && cases.some(c => !files.has(c.file))) errors.push('Test evidence refers to a file outside the snapshot.');
     const structured = { ...common, cases, structured: true };
     if (errors.length) return { ...structured, status: 'error', reason: errors.join('\n') };
     if (!cases.some(c => c.status !== 'skipped')) return { ...structured, status: 'not_run', reason: 'No executed tests (zero or all skipped).' };

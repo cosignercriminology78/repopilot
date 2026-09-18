@@ -7,7 +7,7 @@
 | domain/ | Types, configuration schema, identities, snapshot operations, policies, patch validation and test assessment |
 | ports/ | Agent, Runner, Store, Repository and GitHub contracts |
 | adapters/codex/ | Codex container execution, SDK entry point and context preparation |
-| adapters/testing/ | Docker test execution, Node reporter and Node/Vitest parsing |
+| adapters/testing/ | Docker execution and recovery; Node/Vitest, pytest/JUnit XML and Go JSON evidence |
 | adapters/github/ | GitHub HTTP and Git-data publication |
 | adapters/storage/ | Git operations, snapshot export and filesystem task persistence |
 | reporting/ | Human-readable Markdown reports |

@@ -25,7 +25,7 @@ RepoPilot 帮助仓库维护者把 PR 中的代码与需求描述转化为可检
 - **测试与研发效能工程师**：维护 Node/Vitest 测试、Monorepo，以及依赖数据库或 Redis 的测试环境。
 - **基于 Codex 开发工具的开发者**：希望参考 SDK 编排、结构化模型输出、独立验证和有限轮次修复的开源实现。
 
-以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库，以及 Node/Vitest 的结构化测试证据；暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
+以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库；开发版支持 Node、Vitest、pytest、Go 和兼容的 JUnit XML 测试证据。暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
 
 ## 与 Codex、OpenAI 的直接关系
 
@@ -63,6 +63,8 @@ flowchart LR
 可以先运行本地 `check`，再用 `watch` 轮询 GitHub PR；需要提交已验证的修复供人工审查时，再开启 `publish`。Agent 审查、修复及发布分别配置，示例配置默认关闭这三项。
 
 ## 已实现的代码功能
+
+1.0.0 之后的开发版新增 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)，命令为 `fix --issue`；同时支持 [pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md)。现有 1.0.0 下载包不含这些功能，使用时须从同一源码版本构建控制器和 Agent 镜像。
 
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。
 - 从 base 读取规则，支持嵌套 AGENTS.md、静态文本规则、JS/TS AST 调用规则、规则冲突检查、历史问题去重及带有效期的规则豁免。

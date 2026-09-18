@@ -10,7 +10,7 @@ export async function loadConfig(path: string): Promise<Config> {
     throw new Error('Publishing requires agent.enabled, agent.repair and a test runner.');
   }
   if (config.publish && config.runner && testCommands(config.runner).some(step => step.reporter === 'command')) {
-    throw new Error('Publishing requires structured node or vitest reporters for every command.');
+    throw new Error('Publishing requires a structured test reporter for every command.');
   }
   return config;
 }

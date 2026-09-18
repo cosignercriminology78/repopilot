@@ -2,6 +2,7 @@ import type { Config } from '../domain/config.js';
 import { descriptionHash, pipelineId } from '../domain/identity.js';
 import { applyExceptions, introducedFindings, loadPolicy, partitionFindings } from '../domain/policy.js';
 import { applyChanges, isTest, semanticFindings, validatePlan } from '../domain/repair.js';
+import { reproduced } from '../domain/reproduction.js';
 import { changedPaths } from '../domain/snapshot.js';
 import type { RunInput } from '../domain/task.js';
 import { assessPlan } from '../domain/test-assessment.js';
@@ -23,7 +24,7 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
   const id = pipelineId(input, config);
   const previous = await store.read(id);
   if (previous && input.repoPath && !previous.replay) {
-    previous.replay = { repoPath: input.repoPath, description, pr: input.pr, runKey: input.runKey };
+    previous.replay = { repoPath: input.repoPath, description, pr: input.pr, issue: input.issue, runKey: input.runKey };
     await store.save(previous);
   }
   if (previous && parent?.reason instanceof TaskCancelledError) {
@@ -42,7 +43,8 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     descriptionHash: hash, status: 'running', findings: [], historical: [], suppressed: [], semantic: 'not_run',
     tests: { base: notRun(), head: notRun() }, evidence: [], repairs: [], changes: [], attempts: 0, notes: [],
     createdAt: new Date().toISOString(), executions: (previous?.executions ?? 0) + 1, retryable: false,
-    replay: input.repoPath ? { repoPath: input.repoPath, description, pr: input.pr, runKey: input.runKey } : undefined,
+    issue: input.issue,
+    replay: input.repoPath ? { repoPath: input.repoPath, description, pr: input.pr, issue: input.issue, runKey: input.runKey } : undefined,
     rerunOf: input.rerunOf };
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(new Error('Task time budget exceeded.')), config.taskTimeoutSeconds * 1000);
@@ -62,9 +64,11 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
   };
   try {
     await save(); throwIfAborted(signal);
-    const policy = loadPolicy(input.base), paths = changedPaths(input.base, input.head);
+    if (input.issue && (input.pr || input.baseSha !== input.headSha || changedPaths(input.base, input.head).length)) throw new Error('Issue reproduction requires one pinned target snapshot.');
+    if (input.issue && (!agent || !runner || !config.agent.repair)) throw new Error('Issue reproduction requires an agent, runner and enabled repairs.');
+    const policy = loadPolicy(input.base), paths = input.issue ? [...input.head.keys()] : changedPaths(input.base, input.head);
     Object.assign(report, introducedFindings(input.base, input.head, policy));
-    const policyChanged = paths.some(path => /(^|\/)AGENTS\.md$/.test(path) || path === '.repopilot/policy.json');
+    const policyChanged = changedPaths(input.base, input.head).some(path => /(^|\/)AGENTS\.md$/.test(path) || path === '.repopilot/policy.json');
     if (policyChanged) report.notes.push('Policy changes require maintainer review; using base policy.');
     let baselineSemantic: ReturnType<typeof semanticFindings> = [];
     if (agent) {
@@ -76,9 +80,12 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     Object.assign(report, applyExceptions(report.findings, policy));
     if (runner) { report.tests.base = await run(input.base, 'base'); report.tests.head = await run(input.head, 'head'); }
     let working = input.head, red = report.tests.head, baseline = report.tests.base;
-    let eligible = passed(baseline);
-    if (agent && runner && !policyChanged && passed(baseline) && ['passed', 'failed'].includes(red.status)) {
+    const issueBaseline = !input.issue || (passed(red) && preservesTests(baseline, red) && preservesTests(red, baseline));
+    let eligible = passed(baseline) && issueBaseline;
+    if (agent && runner && !policyChanged && issueBaseline && passed(baseline) && ['passed', 'failed'].includes(red.status)) {
       report.plan = validatePlan(await agent.plan(input.base, input.head, description, signal), input.head, description);
+      if (input.issue && report.plan.scenarios.some(s => s.kind !== 'regression' || !s.requirementQuote || s.requirementQuote.trim().length < 8
+        || !description.includes(s.requirementQuote))) throw new Error('Issue reproduction requires regression scenarios with exact Issue requirement quotes.');
       working = applyChanges(input.head, report.plan.tests);
       baseline = await run(applyChanges(input.base, report.plan.tests), 'planned-base');
       red = await run(working, 'planned-head');
@@ -86,9 +93,14 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
         const cases = red.cases.filter(c => c.file === test.path);
         if (!cases.length || cases.some(c => c.status === 'skipped')) throw new Error('Generated tests were not fully executed: ' + test.path);
       }
-      report.testAssessment = assessPlan(report.plan, report.tests.base, report.tests.head, baseline, red);
-      eligible = report.testAssessment.eligible;
-      report.notes.push(...report.testAssessment.reasons);
+      if (input.issue) {
+        eligible = reproduced(report.plan, report.tests.base, baseline, red);
+        report.notes.push(eligible ? 'Issue reproduced by stable generated test failures on the pinned target.' : 'Issue was not reproducibly demonstrated; repair blocked.');
+      } else {
+        report.testAssessment = assessPlan(report.plan, report.tests.base, report.tests.head, baseline, red);
+        eligible = report.testAssessment.eligible;
+        report.notes.push(...report.testAssessment.reasons);
+      }
     }
     const regression = eligible && red.status === 'failed' && red.structured;
     if (!passed(report.tests.base)) report.notes.push('Base tests already fail or lack structured passing evidence; automatic repair is blocked.');

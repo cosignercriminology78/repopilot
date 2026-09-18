@@ -1,0 +1,13 @@
+{
+  "repository": "owner/repository",
+  "runner": {
+    "timeoutSeconds": 600,
+    "commands": [
+      { "name": "python", "cwd": "packages/python", "image": "repopilot-python-tests:local", "reporter": "pytest", "command": ["python", "-m", "pytest", "tests"] },
+      { "name": "go", "cwd": "packages/go", "image": "repopilot-go-tests:local", "reporter": "go", "command": ["go", "test", "./..."] },
+      { "name": "java", "cwd": "packages/java", "image": "repopilot-java-tests:local", "reporter": "junit", "command": ["mvn", "-o", "test"], "reportDirectory": "target/surefire-reports" }
+    ]
+  },
+  "agent": { "enabled": true, "repair": true, "image": "repopilot-agent:local" },
+  "publish": false
+}

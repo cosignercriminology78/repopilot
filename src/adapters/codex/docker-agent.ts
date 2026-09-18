@@ -7,6 +7,8 @@ import { answerSchema } from '../../domain/agent-answer.js';
 import type { Config } from '../../domain/config.js';
 import type { describeTestEnvironment } from '../../domain/runner-config.js';
 import type { Snapshot } from '../../domain/types.js';
+import { changedPaths } from '../../domain/snapshot.js';
+import { isTest } from '../../domain/repair.js';
 import type { Agent } from '../../ports/agent.js';
 import { RetryableError, throwIfAborted } from '../../shared/control.js';
 import { execute } from '../../shared/process.js';
@@ -25,7 +27,9 @@ export class DockerCodexAgent implements Agent {
   repair(base: Snapshot, head: Snapshot, evidence: string, signal?: AbortSignal) { return this.call('repair', base, head, evidence, signal); }
   private async call(mode: string, base: Snapshot, head: Snapshot, context: string, signal?: AbortSignal, paths?: string[]): Promise<Answer> {
     if (!process.env.OPENAI_API_KEY) throw new Error('Agent container requires OPENAI_API_KEY.');
-    const batches = contextBatches(base, head, paths);
+    const diff = changedPaths(base, head);
+    const selected = paths ?? (!diff.length || (mode === 'repair' && diff.every(isTest)) ? [...head.keys()] : undefined);
+    const batches = contextBatches(base, head, selected);
     const combined: Answer = { findings: [], changes: [], scenarios: [], summary: '' };
     for (const batch of batches) {
       throwIfAborted(signal);

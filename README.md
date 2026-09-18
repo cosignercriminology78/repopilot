@@ -22,10 +22,10 @@ A passing existing test suite may miss a new requirement or an untested edge cas
 
 - **Open-source maintainers** who want help reviewing same-repository PRs, checking contribution rules and producing regression evidence.
 - **Small JavaScript/TypeScript teams** that need additional test coverage and repair proposals without building a custom agent controller.
-- **QA and developer-tooling engineers** who maintain Node/Vitest suites, monorepos and test environments with database or Redis dependencies.
+- **QA and developer-tooling engineers** who maintain JavaScript, Python, Go or Java suites, monorepos and test environments with database or Redis dependencies.
 - **Developers building with Codex** who want an inspectable example of SDK orchestration, structured model output, independent verification and bounded repair.
 
-These are intended users, not claims of existing adoption. The current scope is public, text-based repositories with Node or Vitest test evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
+These are intended users, not claims of existing adoption. The current scope is public, text-based repositories; development builds support Node, Vitest, pytest, Go and compatible JUnit XML evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
 
 ## How it uses OpenAI Codex
 
@@ -59,6 +59,8 @@ flowchart LR
 Start with a local `check`; enable `watch` for GitHub polling and `publish` when you want verified proposals submitted for human review. Agent review, repair and publishing are separately configurable and disabled in the example configuration.
 
 ## Implemented
+
+Development builds after 1.0.0 add [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, and [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters. These are not included in existing 1.0.0 packages. Build the controller and Agent image from the same source revision when using them.
 
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
 - Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.

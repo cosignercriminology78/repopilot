@@ -3,7 +3,8 @@ import { safePath } from './snapshot.js';
 
 const command = z.array(z.string().min(1)).min(1);
 const image = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/);
-const reporter = z.enum(['node', 'vitest', 'command']);
+const reporter = z.enum(['node', 'vitest', 'pytest', 'go', 'junit', 'command']);
+const reportFiles = z.array(z.string().refine(safePath)).min(1).max(100);
 const memory = z.string().regex(/^\d+[mg]$/);
 const cwd = z.string().refine(value => value === '' || safePath(value), 'Working directory must be a repository-relative path.');
 const env = z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/)
@@ -12,6 +13,8 @@ const name = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 const stepSchema = z.object({
   name, command, cwd: cwd.default(''), reporter: reporter.default('node'),
   image: image.optional(), env: env.optional(),
+  reportFiles: reportFiles.optional(),
+  reportDirectory: z.string().refine(safePath).optional(),
   timeoutSeconds: z.number().int().min(1).max(1800).optional()
 }).strict();
 const serviceSchema = z.object({
@@ -27,6 +30,8 @@ export const runnerSchema = z.object({
   command: command.optional(), commands: z.array(stepSchema).min(1).max(8).optional(),
   cwd: cwd.optional(), env: env.optional(), services: z.array(serviceSchema).max(4).optional(),
   reporter: reporter.default('node'),
+  reportFiles: reportFiles.optional(),
+  reportDirectory: z.string().refine(safePath).optional(),
   environmentAttempts: z.number().int().min(1).max(3).optional(),
   timeoutSeconds: z.number().int().min(1).max(1800).default(300),
   memory: memory.default('1g'), cpus: z.number().positive().max(16).default(2)
@@ -34,22 +39,28 @@ export const runnerSchema = z.object({
   const issue = (message: string) => ctx.addIssue({ code: 'custom', message });
   if (!!config.command === !!config.commands) issue('Specify exactly one of runner.command or runner.commands.');
   if (config.commands && config.cwd) issue('Use per-command cwd with runner.commands.');
+  if (config.commands && (config.reportFiles || config.reportDirectory)) issue('Use per-command report paths with runner.commands.');
   for (const entries of [config.commands ?? [], config.services ?? []]) {
     if (new Set(entries.map(e => e.name)).size !== entries.length) issue('Command/service names must be unique.');
   }
-  for (const step of config.commands ?? (config.command ? [{ command: config.command, reporter: config.reporter }] : [])) {
+  for (const step of config.commands ?? (config.command ? [{ command: config.command, reporter: config.reporter, reportFiles: config.reportFiles, reportDirectory: config.reportDirectory }] : [])) {
     if (step.command.some(arg => /^(--test-reporter|--reporter|--outputFile)/.test(arg))) issue('Reporter flags are controller-owned.');
     if (step.reporter === 'node' && (step.command[0] !== 'node' || !step.command.includes('--test'))) issue('The node reporter requires a node --test command.');
+    if (step.reporter === 'go' && (step.command[0] !== 'go' || step.command[1] !== 'test' || step.command.some(arg => /^-(json|count)(=|$)/.test(arg)))) issue('Go requires go test with controller-owned -json and -count flags.');
+    if (step.reporter === 'pytest' && step.command.some(arg => /junit|^-o$|^--override-ini/.test(arg))) issue('Pytest JUnit output options are controller-owned.');
+    if (step.reporter === 'junit' && !!step.reportFiles === !!step.reportDirectory) issue('JUnit requires exactly one of reportFiles or reportDirectory relative to command cwd.');
+    if (step.reporter !== 'junit' && (step.reportFiles || step.reportDirectory)) issue('Report paths are only supported for junit.');
   }
 });
 export type RunnerConfig = z.infer<typeof runnerSchema>;
 export type TestCommand = z.infer<typeof stepSchema>;
 export type TestService = z.infer<typeof serviceSchema>;
 export function testCommands(config: RunnerConfig): TestCommand[] {
-  return config.commands ?? [{ name: 'default', command: config.command!, cwd: config.cwd ?? '', reporter: config.reporter }];
+  return config.commands ?? [{ name: 'default', command: config.command!, cwd: config.cwd ?? '', reporter: config.reporter, reportFiles: config.reportFiles, reportDirectory: config.reportDirectory }];
 }
 export function describeTestEnvironment(config: RunnerConfig) {
   return { commands: testCommands(config).map(step => ({ name: step.name, cwd: step.cwd, command: step.command,
-    reporter: step.reporter, environmentVariables: Object.keys({ ...config.env, ...step.env }).sort() })),
+    reporter: step.reporter, reportFiles: step.reportFiles, reportDirectory: step.reportDirectory,
+    environmentVariables: Object.keys({ ...config.env, ...step.env }).sort() })),
     services: (config.services ?? []).map(service => service.name) };
 }

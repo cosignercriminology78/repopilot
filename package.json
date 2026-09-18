@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@openai/codex-sdk": "0.155.0",
+    "saxes": "6.0.0",
     "typescript": "5.9.3",
     "zod": "4.6.5"
   },

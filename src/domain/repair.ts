@@ -4,10 +4,10 @@ import { changedPaths, copySnapshot, safePath } from './snapshot.js';
 import type { Finding, RepairChange, Snapshot, TestPlan } from './types.js';
 
 export function protectedPath(path: string): boolean {
-  return /(^|\/)(AGENTS\.md|CLAUDE\.md|package[^/]*\.json|[^/]*lock[^/]*|[^/]*config[^/]*|Dockerfile[^/]*|Makefile|go\.mod|go\.sum|Cargo\.toml|pyproject\.toml)$/i.test(path)
+  return /(^|\/)(AGENTS\.md|CLAUDE\.md|package[^/]*\.json|[^/]*lock[^/]*|[^/]*config[^/]*|Dockerfile[^/]*|Makefile|go\.mod|go\.sum|Cargo\.toml|pyproject\.toml|conftest\.py|setup\.(py|cfg)|requirements[^/]*\.txt|pytest\.ini|tox\.ini|pom\.xml|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|gradle\.properties)$/i.test(path)
     || path.split('/').some(segment => segment.startsWith('.'));
 }
-export function isTest(path: string): boolean { return /(^|\/)(tests?|__tests__)\/|[._](test|spec)\.|_test\.go$|(^|\/)test_[^/]+\.py$/i.test(path); }
+export function isTest(path: string): boolean { return /(^|\/)(tests?|__tests__)\/|[._](test|spec)\.|_test\.go$|(^|\/)test_[^/]+\.py$|Test(s)?\.java$/i.test(path); }
 export function applyChanges(head: Snapshot, changes: RepairChange[]): Snapshot {
   if (!changes.length) throw new Error('Agent proposed no changes.');
   const result = copySnapshot(head), seen = new Set<string>();
@@ -26,8 +26,8 @@ export function applyChanges(head: Snapshot, changes: RepairChange[]): Snapshot 
 export function validatePlan(answer: Answer, head: Snapshot, description = ''): TestPlan {
   if (!answer.scenarios.length || !answer.changes.length) throw new Error('Agent did not provide executable tests and scenarios.');
   const paths = new Set(answer.changes.map(c => c.path));
-  if (answer.changes.some(c => head.has(c.path) || !isTest(c.path) || !/\.[cm]?[jt]sx?$/.test(c.path))) {
-    throw new Error('Test planning may only add JavaScript/TypeScript test files.');
+  if (answer.changes.some(c => head.has(c.path) || !isTest(c.path) || !/(\.[cm]?[jt]sx?|\.py|\.go|\.java)$/.test(c.path))) {
+    throw new Error('Test planning may only add supported test files.');
   }
   if (answer.scenarios.some(s => !paths.has(s.testFile)) || [...paths].some(p => !answer.scenarios.some(s => s.testFile === p))) {
     throw new Error('Every generated test file must map to a planned scenario.');
@@ -43,7 +43,12 @@ export function validatePlan(answer: Answer, head: Snapshot, description = ''): 
     }
   }
   applyChanges(head, answer.changes);
-  const testFiles = new Map(answer.changes.map(c => [c.path, c.content]));
+  const testFiles = new Map(answer.changes.filter(c => /\.[cm]?[jt]sx?$/.test(c.path)).map(c => [c.path, c.content]));
+  for (const change of answer.changes) {
+    if ((change.path.endsWith('.py') && /\b(skip|skipif|xfail)\b/.test(change.content))
+      || (change.path.endsWith('.go') && /\.Skip(f|Now)?\s*\(|\/\/\s*(go:build|\+build)/.test(change.content))
+      || (change.path.endsWith('.java') && /@(Disabled|Ignore|Enabled\w*|Disabled\w*)\b|\bAssumptions?\s*\./.test(change.content))) throw new Error('Generated tests contain disabled/conditional tests.');
+  }
   const policy = policySchema.parse({ rules: ['test', 'it', 'describe'].flatMap(fn => ['skip', 'todo', 'only'].map(modifier => ({
     id: fn + '-' + modifier, kind: 'forbid-call', callee: fn + '.' + modifier, message: 'Generated tests cannot skip, focus or remain TODO.'
   }))) });

@@ -13,6 +13,7 @@ import { runPipeline } from './pipeline.js';
 
 export function taskSummary(report: Report) {
   return { id: report.id, status: report.status, repository: report.repository, pr: report.pr,
+    issue: report.issue?.number, targetBranch: report.issue?.branch,
     createdAt: report.createdAt, executions: report.executions, attempts: report.attempts,
     rerunOf: report.rerunOf, replayable: !!report.replay, pullRequestUrl: report.pullRequestUrl };
 }
@@ -56,7 +57,7 @@ export async function replayTask(id: string, mode: 'resume' | 'rerun', config: C
     const head = await repository.snapshot(input.repoPath, input.headSha, controlled);
     return runPipeline({ ...input, base, head }, config, store, runner, agent, controlled);
   };
-  if (!previous.pr) return work(signal);
+  if (!previous.pr && !previous.issue) return work(signal);
   if (!await github.current(previous)) throw new Error('PR inputs changed; use watch to review the current revision.');
   return withFreshness(work, async () => !!await github.current(previous), config.freshnessSeconds * 1000, signal);
 }

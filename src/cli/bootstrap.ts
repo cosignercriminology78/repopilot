@@ -6,6 +6,7 @@ import { DockerRunner } from '../adapters/testing/docker-runner.js';
 import { DockerRecoveryResources } from '../adapters/testing/recovery-resources.js';
 import { ControllerLock } from '../adapters/storage/controller-lock.js';
 import { applyRecovery, recoveryPreview } from '../application/recovery.js';
+import { fixIssue } from '../application/issue.js';
 import { describeTestEnvironment } from '../domain/runner-config.js';
 import { VERSION } from '../shared/version.js';
 import { help, parseCli } from './args.js';
@@ -24,7 +25,7 @@ export async function main(args: string[], output: Output = standardOutput): Pro
   if (values.help || !command) { output.write(help); return 0; }
   if (command === 'init') return initialize(values, output);
   if (command === 'doctor') return doctor(values, output);
-  if (!values.config || !['check', 'watch', 'tasks', 'recover'].includes(command)) throw new Error('Use check, watch, tasks or recover with --config.');
+  if (!values.config || !['check', 'watch', 'tasks', 'recover', 'fix'].includes(command)) throw new Error('Use check, watch, tasks, fix or recover with --config.');
   const config = await loadConfig(values.config), store = new Store(config.dataDir);
   if (command === 'recover') {
     const lock = new ControllerLock(config.dataDir), resources = new DockerRecoveryResources(config.dataDir);
@@ -41,12 +42,17 @@ export async function main(args: string[], output: Output = standardOutput): Pro
   const abort = new AbortController(), stop = () => abort.abort();
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   try {
+    const github = new GitHub(config.repository, undefined, { signal: abort.signal, retry: config.retry });
     const runtime: Runtime = { config, store, repository: gitRepository, signal: abort.signal,
       runner: config.runner ? new DockerRunner(config.runner, config.dataDir) : undefined,
       agent: config.agent.enabled ? new DockerCodexAgent(config.agent, config.dataDir,
         config.runner ? describeTestEnvironment(config.runner) : undefined) : undefined,
-      github: new GitHub(config.repository, undefined, { signal: abort.signal, retry: config.retry }) };
+      github };
     if (command === 'watch') { await watchCommand(values, runtime, output); return 0; }
+    if (command === 'fix') {
+      const report = await fixIssue(Number(values.issue), values.branch, { ...runtime, github });
+      output.write(reportSummary(report, config)); return reportExitCode(report);
+    }
     const report = command === 'check' ? await check(values, runtime) : await runTask(action!, task!, runtime);
     output.write(reportSummary(report, config)); return reportExitCode(report);
   } finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); await release(); }

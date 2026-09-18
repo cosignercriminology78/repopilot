@@ -36,6 +36,6 @@ export async function runTask(action: string, task: string, runtime: Runtime) {
   if (action !== 'resume' && action !== 'rerun') throw new Error('Unknown task execution action.');
   const { config, store, repository, github, runner, agent, signal } = runtime;
   const report = await replayTask(task, action, config, store, repository, github, runner, agent, signal);
-  if (report.pr) await finishReport(report, config, store, github, signal);
+  if (report.pr || report.issue) await finishReport(report, config, store, github, signal);
   return report;
 }

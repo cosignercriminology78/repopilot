@@ -11,17 +11,30 @@ import { ownerLabels, resourceOwner } from '../../shared/resource-owner.js';
 import { writeSnapshot } from '../storage/git.js';
 import { DependencyStoppedError, DockerEnvironment, type DockerExecute } from './environment.js';
 import { classifyTestResult } from './test-results.js';
+import { XML_MARKER } from './language-reports.js';
 
 export function runnerCommand(config: Pick<TestCommand, 'command' | 'reporter'>): string[] {
   if (config.command.some(arg => /^(--test-reporter|--reporter|--outputFile)/.test(arg))) throw new Error('Reporter flags are controller-owned.');
   if (config.reporter === 'node') return [config.command[0]!, '--test-reporter=/repopilot/node-reporter.mjs', ...config.command.slice(1)];
   if (config.reporter === 'vitest') return [...config.command, '--reporter=json'];
+  if (config.reporter === 'pytest') return [...config.command, '--junitxml=/tmp/repopilot.xml', '-o', 'junit_family=legacy'];
+  if (config.reporter === 'go') return ['go', 'test', '-json', '-count=1', ...config.command.slice(2)];
   return [...config.command];
 }
 export function nodeReporterUrl(): URL {
   return new URL('../../../dist/adapters/testing/node-reporter.js', import.meta.url);
 }
 const failure = (output: string): TestResult => ({ status: 'error', exitCode: null, output, durationMs: 0, cases: [], structured: false });
+export function runnerScript(step: TestCommand): string {
+  const setup = 'mkdir /tmp/work && cp -R /source/. /tmp/work/ && cd "/tmp/work/$1" && shift';
+  if (!['pytest', 'junit'].includes(step.reporter)) return setup + ' && exec "$@"';
+  const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
+  const paths = step.reporter === 'junit' && step.reportDirectory ? quote(step.reportDirectory) + '/*.xml'
+    : (step.reporter === 'pytest' ? ['/tmp/repopilot.xml'] : step.reportFiles!).map(quote).join(' ');
+  return setup + ' || exit 127; for report in ' + paths + '; do rm -f -- "$report" || exit 127; done; '
+    + '"$@" >&2; result=$?; for report in ' + paths + '; do printf %s ' + quote(XML_MARKER)
+    + '; cat -- "$report" || exit 127; done; exit "$result"';
+}
 
 export class DockerRunner implements Runner {
   private runProcess: DockerExecute;
@@ -64,13 +77,13 @@ export class DockerRunner implements Runner {
           '--user', '65534:65534', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m,mode=1777',
           '--mount', 'type=bind,source=' + source + ',target=/source,readonly',
           '--mount', 'type=bind,source=' + support + ',target=/repopilot,readonly',
-          ...Object.entries({ ...this.config.env, ...step.env }).flatMap(([key, value]) => ['--env', key + '=' + value]),
+          ...Object.entries({ ...(step.reporter === 'go' ? { GOCACHE: '/tmp/go-build', GOPATH: '/tmp/go', GOTOOLCHAIN: 'local' } : {}), ...this.config.env, ...step.env }).flatMap(([key, value]) => ['--env', key + '=' + value]),
           '--workdir', '/tmp', '--entrypoint', '/bin/sh', step.image ?? this.config.image,
-          '-c', 'mkdir /tmp/work && cp -R /source/. /tmp/work/ && cd "/tmp/work/$1" && shift && exec "$@"',
+          '-c', runnerScript(step),
           'repopilot', step.cwd, ...runnerCommand(step)],
           { timeoutMs: (step.timeoutSeconds ?? this.config.timeoutSeconds) * 1000, signal });
         if (execution.code === 125) throw new RetryableError('Docker could not start the test container.');
-        const parsed = classifyTestResult(execution, step.reporter, Date.now() - commandStart, '/tmp/work', step.cwd);
+        const parsed = classifyTestResult(execution, step.reporter, Date.now() - commandStart, '/tmp/work', step.cwd, files);
         if (this.config.commands) parsed.cases = parsed.cases.map(c => ({ ...c, command: step.name, id: JSON.stringify([step.name, c.id]) }));
         commands.push({ ...parsed, name: step.name, cwd: step.cwd });
         await environment.assertRunning(signal);
