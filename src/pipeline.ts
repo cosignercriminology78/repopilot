@@ -6,18 +6,35 @@ import { notRun, type Runner } from './runner.js';
 import { taskId, type Store } from './store.js';
 import { passed, sameFailures, preservesTests } from './test-results.js';
 import { assessPlan } from './test-assessment.js';
+import { withTaskCancellation, TaskCancelledError } from './task-control.js';
 import { RetryableError, StaleTaskError, throwIfAborted } from './control.js';
 import type { PullRequest, Report, Snapshot, TestResult } from './types.js';
 
-export interface RunInput { base: Snapshot; head: Snapshot; baseSha: string; headSha: string; pr?: PullRequest; description?: string; }
+export interface RunInput { base: Snapshot; head: Snapshot; baseSha: string; headSha: string; pr?: PullRequest; description?: string;
+  repoPath?: string; runKey?: string; rerunOf?: string; }
 export function descriptionHash(pr?: PullRequest, description = ''): string {
   return taskId(pr ? [pr.title, pr.body ?? ''] : description);
 }
+export function pipelineId(input: Pick<RunInput, 'pr' | 'description' | 'baseSha' | 'headSha' | 'runKey'>, config: Config): string {
+  return taskId({ version: 3, repository: config.repository, pr: input.pr?.number, base: input.baseSha, head: input.headSha,
+    description: descriptionHash(input.pr, input.description), config, runKey: input.runKey });
+}
 export async function runPipeline(input: RunInput, config: Config, store: Store, runner?: Runner, agent?: Agent, parent?: AbortSignal): Promise<Report> {
+  return withTaskCancellation(store, pipelineId(input, config), signal => executePipeline(input, config, store, runner, agent, signal), parent);
+}
+async function executePipeline(input: RunInput, config: Config, store: Store, runner?: Runner, agent?: Agent, parent?: AbortSignal): Promise<Report> {
   const description = input.pr ? `${input.pr.title}\n${input.pr.body ?? ''}` : input.description ?? '';
   const hash = descriptionHash(input.pr, description);
-  const id = taskId({ version: 3, repository: config.repository, pr: input.pr?.number, base: input.baseSha, head: input.headSha, description: hash, config });
+  const id = pipelineId(input, config);
   const previous = await store.read(id);
+  if (previous && input.repoPath && !previous.replay) {
+    previous.replay = { repoPath: input.repoPath, description, pr: input.pr, runKey: input.runKey };
+    await store.save(previous);
+  }
+  if (previous && parent?.reason instanceof TaskCancelledError) {
+    if (previous.status !== 'published') { previous.status = 'cancelled'; await store.save(previous); }
+    return previous;
+  }
   if (previous && ['running', 'cancelled'].includes(previous.status) && previous.executions >= config.retry.maxTaskExecutions) {
     previous.status = 'error'; previous.retryable = false;
     previous.notes.push('Task execution limit reached after interruption.'); await store.save(previous); return previous;
@@ -29,7 +46,9 @@ export async function runPipeline(input: RunInput, config: Config, store: Store,
   const report: Report = { schemaVersion: 2, id, repository: config.repository, pr: input.pr?.number, base: input.baseSha, head: input.headSha,
     descriptionHash: hash, status: 'running', findings: [], historical: [], suppressed: [], semantic: 'not_run',
     tests: { base: notRun(), head: notRun() }, evidence: [], repairs: [], changes: [], attempts: 0, notes: [],
-    createdAt: new Date().toISOString(), executions: (previous?.executions ?? 0) + 1, retryable: false };
+    createdAt: new Date().toISOString(), executions: (previous?.executions ?? 0) + 1, retryable: false,
+    replay: input.repoPath ? { repoPath: input.repoPath, description, pr: input.pr, runKey: input.runKey } : undefined,
+    rerunOf: input.rerunOf };
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(new Error('Task time budget exceeded.')), config.taskTimeoutSeconds * 1000);
   const signal = parent ? AbortSignal.any([parent, deadline.signal]) : deadline.signal;

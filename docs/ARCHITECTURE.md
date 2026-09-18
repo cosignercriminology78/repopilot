@@ -21,6 +21,7 @@ The controller owns configuration, credentials, task records and publication. Ta
 | github.ts / publication.ts | Read retries, durable publication retries, input freshness, Git modes, collision checks, draft PR publication |
 | report.ts / store.ts | Markdown summaries, atomic JSON records, previous-execution archives, exclusive lock |
 | cli.ts | Local check and serial GitHub watcher |
+| tasks.ts / task-control.ts | Task inspection, pinned replays, persistent cancellation and cooperative abort |
 
 ## State and recovery
 
@@ -29,6 +30,8 @@ Tasks identify repository, PR, base/head, title/body digest, configuration and r
 Terminal reports deduplicate. Temporary errors retry only after retryAfter and below maxTaskExecutions; interrupted running/cancelled tasks can resume within the same bound. Earlier evidence is archived before rerun. Permanent errors need corrected configuration or inputs. A single controller owns the data directory; after a crash verify the old process stopped before removing its lock.
 
 A freshness monitor aborts in-flight work when PR input changes. SIGINT/SIGTERM and task timeout propagate to Git subprocesses, Docker clients and adapter calls. Container removal runs independently during cleanup. Process crashes may still leave containers.
+
+Operator cancellation writes a separate atomic marker without acquiring the report writer lock. Verification/publication poll it and abort active operations. Cancellation markers persist until explicit resume; new PR inputs get distinct task IDs. List/show expose the request separately from final report state. Rerun adds a random run key to task identity and stores rerunOf; resume keeps the original key/configuration and bounded execution count. Replay metadata stores the local repository path, pinned commits and canonical description. Verification restarts from the beginning; verified publication can resume separately. Remote PR freshness is mandatory for replay.
 
 GitHub GET calls retry selected rate-limit/server failures with bounded exponential waits. Server retry windows beyond the wait budget defer rather than retry early. Writes are not blindly replayed: publication reconstructs the expected tree and checks existing branch/PR content before reuse. A late source update can still leave an unused branch.
 

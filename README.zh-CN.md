@@ -76,6 +76,26 @@ agent.enabled 开启语义审查和测试规划；agent.repair 开启有限轮�
 
 maxCalls 限制每次任务执行的模型调用数量。maxTokens 根据每次模型返回的用量累计，超限阻止后续调用；单次调用可能越过阈值，它不是预付费额度或金额硬上限。maxTaskExecutions 同时限制崩溃恢复和临时错误重跑。
 
+## 任务管理 CLI
+
+```powershell
+npm run dev -- tasks list --config config.local.json --status running --limit 20 --offset 0
+npm run dev -- tasks show 任务ID --config config.local.json --format markdown
+npm run dev -- tasks cancel 任务ID --config config.local.json
+npm run dev -- tasks resume 任务ID --config config.local.json
+npm run dev -- tasks rerun 任务ID --config config.local.json
+```
+
+- list：分页列出当前配置仓库的任务，支持状态筛选，并单独显示取消请求。
+- show：查看 JSON（默认）或 Markdown 报告。
+- cancel：提交持久取消请求，运行中的控制器约每 250 ms 检查并传递给执行器及发布请求。可以在控制器持锁时调用；返回表示请求已登记，最终状态以报告为准。已完成的远端写入不会撤销。
+- resume：在相同配置、相同提交及执行次数上限内恢复中断/取消/可重试错误任务；验证阶段从头执行，已验证任务只继续发布。仍遵守重试等待时间。永久错误、终态或预算耗尽须使用 rerun。
+- rerun：使用原任务固定提交和当前配置，建立带 rerunOf 关联的新任务，保留原任务报告和取消请求。不会读取分支的新 HEAD。
+
+查看与取消不占写锁；恢复、重跑必须先停止正在运行的控制器。崩溃遗留锁仍须确认旧进程停止后清理。取消只针对指定任务，输入变化形成的新任务不继承取消状态。
+
+任务保存本地仓库路径、提交和描述供重放，源码仓库或 watcher 的 git-cache 必须仍存在。PR 重放前及执行中重新核验输入；PR 已更新时用 watch 检查新版本。旧报告缺少重放信息时，再运行一次原 check/watch 可补录。恢复不会跳过测试或直接采信上次未完成的验证。
+
 ## 当前边界
 
 代码已增加离线回归验证；本轮不运行真实 Docker、Codex 推理或 GitHub 修复闭环。具体覆盖见 [验证记录](docs/VERIFICATION.md)。

@@ -42,4 +42,6 @@ export interface Report {
   agentUsage?: { calls: number; tokens: number };
   pullRequestUrl?: string;
   publication?: { attempts: number; retryAfter?: string; error?: string; retryable: boolean };
+  replay?: { repoPath: string; description: string; pr?: PullRequest; runKey?: string };
+  rerunOf?: string;
 }

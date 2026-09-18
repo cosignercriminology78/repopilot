@@ -1,6 +1,6 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 42 offline regression tests and compilation.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 49 offline regression tests and compilation.
 
 Coverage includes:
 
@@ -11,6 +11,7 @@ Coverage includes:
 - Zero/skipped/duplicate/outside-root/contradictory reports and Vitest JSON fixtures.
 - Real Node test-runner events from a small synthetic local fixture: nested suites, assertions, skips and module-load failures.
 - Cancellation of a synthetic child process, freshness monitor and bounded retry timing.
+- Task list/show/cancel/resume/rerun CLI on a synthetic repository, cancellation under the controller lock, persistent cancellation, replay identity/budgets and in-flight publication abort.
 - Description changes, persistent task execution limits, controller lock and deduplication.
 - Mock GitHub stale/draft/fork protection and executable-mode publication.
 - Synthetic local Git snapshot and CLI comparison without modifying a real source checkout.

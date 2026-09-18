@@ -52,7 +52,9 @@ export class GitHub {
     return pr.state === 'open' && !pr.draft && !pr.head.ref.startsWith('autofix/') && pr.head.repo?.full_name === this.repository
       && pr.head.sha === report.head && pr.base.sha === report.base && descriptionHash(pr) === report.descriptionHash ? pr : undefined;
   }
-  async publish(report: Report): Promise<string | undefined> {
+  async publish(report: Report, signal?: AbortSignal): Promise<string | undefined> {
+    if (signal) return new GitHub(this.repository, this.token, { ...this.options,
+      signal: this.options.signal ? AbortSignal.any([this.options.signal, signal]) : signal }).publish(report);
     if (!this.token) throw new Error('GITHUB_TOKEN is required to publish.');
     if (report.repository !== this.repository || report.status !== 'verified' || !report.changes.length
       || !report.tests.repaired || !passed(report.tests.repaired)) throw new Error('Only verified repairs can be published.');

@@ -89,6 +89,22 @@ Publication rechecks SHAs and description. Existing branches/PRs are reusable on
 
 ## Operations and limits
 
+Task management commands:
+
+```sh
+npm run dev -- tasks list --config config.local.json --status running --limit 20 --offset 0
+npm run dev -- tasks show TASK_ID --config config.local.json --format markdown
+npm run dev -- tasks cancel TASK_ID --config config.local.json
+npm run dev -- tasks resume TASK_ID --config config.local.json
+npm run dev -- tasks rerun TASK_ID --config config.local.json
+```
+
+List/show/cancel work while the controller holds its writer lock. Cancel registers a persistent request checked every 250 ms during verification/publication; the response acknowledges the request, while the report records completion. It cannot undo remote writes already completed. The watcher does not restart a cancelled task while its marker remains. Cancellation applies to that task, not future PR revisions.
+
+Resume/rerun require the controller lock. Resume keeps task identity/configuration and execution limits, reruns verification from the beginning, or continues publication of an already-verified task. Retry delays still apply. Permanent/terminal/exhausted tasks need rerun. Rerun creates a new linked task using the original pinned commits and current configuration; it preserves prior reports and cancellation markers.
+
+Replay needs the recorded local repository or git-cache. PR inputs are rechecked before and during replay; updated PRs need watch. Older reports without replay metadata can be enriched by repeating the original check/watch. Stale crash locks still require checking that the old process stopped before removal.
+
 Reports and snapshots live in .repopilot-data. Each task has JSON and Markdown; retries archive previous evidence as TASK.execution-N.json. JSON holds bounded full outputs and candidate patches; Markdown/PR output is abbreviated.
 
 Task timeout, maxCalls, maxAttempts and maxTaskExecutions are bounded. maxTokens accounts for reported usage after each model call; a single call may exceed it. It is not a hard monetary budget.
