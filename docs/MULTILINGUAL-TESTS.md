@@ -1,6 +1,6 @@
 # Multi-language test execution
 
-Development feature after 1.0.0. Existing binaries support Node/Vitest; source builds additionally support `pytest`, `go` and `junit`. Adapt [this configuration example](../examples/multilingual.json) to your images, directories and commands.
+Available in 1.1.0: Node/Vitest plus `pytest`, `go` and `junit` reporters. Adapt [this configuration example](../examples/multilingual.json) to your images, directories and commands.
 
 | Reporter | Command | Evidence |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 # Crash recovery and resource cleanup
 
-Available on the development branch after 1.0.0; the existing 1.0.0 download packages do not include this command.
+Available in 1.1.0. See the legacy-resource limitations below when upgrading from 1.0.0.
 
 Stop ordinary controller work before recovery. Use the same host, data directory and Docker context as the interrupted controller. Recovery requires a reachable Docker daemon so it can inspect leftovers before changing task state.
 

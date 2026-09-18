@@ -1,8 +1,8 @@
 {
   "name": "repopilot-agent",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Local-first GitHub policy checks, regression testing and verified repair branches powered by Codex.",
+  "description": "Self-hosted, verification-driven iteration from GitHub Issues and PRs, powered by the OpenAI Codex SDK.",
   "type": "module",
   "license": "MIT",
   "engines": {

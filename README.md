@@ -1,10 +1,10 @@
 # RepoPilot
 
-**A self-hosted PR testing and repair agent built with the OpenAI Codex SDK.**
+**Verification-driven software iteration, powered by the OpenAI Codex SDK and hosted on your own worker.**
 
 [中文说明](README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](SECURITY.md) · [Verification](docs/VERIFICATION.md)
 
-RepoPilot helps repository maintainers turn GitHub pull requests into reviewable test evidence and repair proposals. It uses Codex to review repository rules, generate requirement-driven tests, and propose fixes. A separate Docker runner checks the code before the controller can publish a repair branch and draft PR. Maintainers retain the merge decision.
+RepoPilot turns GitHub Issues and pull requests into a bounded cycle of test generation, failure reproduction, code repair and independent verification. It uses Codex to review repository rules, generate requirement-driven tests, and propose fixes. A separate Docker runner checks the code before the controller can publish a repair branch and draft PR. Maintainers retain the merge decision.
 
 ## What problem does it solve?
 
@@ -12,6 +12,7 @@ A passing existing test suite may miss a new requirement or an untested edge cas
 
 | Maintainer problem | How RepoPilot addresses it |
 | --- | --- |
+| An Issue describes a bug without a regression test | Codex proposes a test tied to the Issue description; reproducible failure is required before repair. |
 | A PR changes behavior that existing tests do not cover | Codex generates new tests from the PR description and changed code; the runner compares base and head results. |
 | Project conventions live in AGENTS.md and are easy to miss | Static rules and Codex semantic review use trusted base-branch policy, with cited rules and code evidence. |
 | A suggested fix has no reproducible verification | Tests are frozen before repair; candidates must preserve test identities and pass independent execution and policy rechecks. |
@@ -21,11 +22,11 @@ A passing existing test suite may miss a new requirement or an untested edge cas
 ## Who is it for?
 
 - **Open-source maintainers** who want help reviewing same-repository PRs, checking contribution rules and producing regression evidence.
-- **Small JavaScript/TypeScript teams** that need additional test coverage and repair proposals without building a custom agent controller.
+- **Small development teams** that need additional test coverage and repair proposals without building a custom agent controller.
 - **QA and developer-tooling engineers** who maintain JavaScript, Python, Go or Java suites, monorepos and test environments with database or Redis dependencies.
 - **Developers building with Codex** who want an inspectable example of SDK orchestration, structured model output, independent verification and bounded repair.
 
-These are intended users, not claims of existing adoption. The current scope is public, text-based repositories; development builds support Node, Vitest, pytest, Go and compatible JUnit XML evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
+These are intended users, not claims of existing adoption. The current scope is public, text-based repositories; version 1.1.0 supports Node, Vitest, pytest, Go and compatible JUnit XML evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
 
 ## How it uses OpenAI Codex
 
@@ -41,32 +42,38 @@ The [agent entry point](src/adapters/codex/entry.ts) creates `Codex` with `OPENA
 
 The controller, test execution and reports run on your machine or worker. Model calls use OpenAI services and send selected repository text and task context; self-hosting does not mean offline model inference. GitHub credentials stay in the controller. This is an independent MIT-licensed project built with Codex, not an official OpenAI product.
 
-## Example workflow
+## Automated iteration workflow
 
 For a hypothetical PR that adds an input-validation rule, Codex can propose boundary tests tied to the requested behavior. RepoPilot runs them on both revisions. A new-behavior test that fails on base and passes on head needs an exact supporting requirement quote; an existing-behavior test that passes on base and fails on head is a regression candidate. Only reproducible regressions or eligible policy violations proceed to repair.
 
 ```mermaid
 flowchart LR
     A[PR code and description] --> B[Pin commits and load trusted rules]
+    I[Selected GitHub Issue] --> J[Pin target branch and reproduce bug]
     B --> C[Codex review and test plan]
     C --> D[Independent base and head tests]
     D --> E[Report evidence]
-    D --> F[Eligible issue: Codex repair proposal]
+    D --> F[Eligible defect: Codex repair proposal]
+    J --> F
     F --> G[Verify frozen tests and policy]
-    G --> H[Optional repair branch and draft PR]
+    G -->|Verified| H[Optional repair branch and draft PR]
+    G -->|Eligible retry within limits| F
+    H --> R[Maintainer review and merge decision]
 ```
 
 Start with a local `check`; enable `watch` for GitHub polling and `publish` when you want verified proposals submitted for human review. Agent review, repair and publishing are separately configurable and disabled in the example configuration.
 
+For an Issue, run `fix --issue 123 --config config.local.json`: establish a passing original baseline, reproduce the reported bug with a new frozen test, then attempt a repair. Iteration stays within configured attempt, call and time limits; insufficient evidence stops the task for review. Issue selection is explicit; RepoPilot does not autonomously choose a product roadmap or merge changes.
+
 ## Implemented
 
-Development builds after 1.0.0 add [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, and [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters. These are not included in existing 1.0.0 packages. Build the controller and Agent image from the same source revision when using them.
+Version **1.1.0** includes [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters, and [owned-resource crash recovery](docs/RECOVERY.md). Use the matching 1.1.0 controller and Agent image.
 
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
 - Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.
 - Nested AGENTS.md semantic review with verbatim rule/code citations and historical finding comparison.
 - Proactive test plans and new test files, frozen before production-code repair.
-- Structured Node and Vitest results: test discovery, stable identities, repeated failure fingerprints and same-case verification.
+- Structured Node, Vitest, pytest, Go and compatible JUnit XML results: test discovery, stable identities, repeated failure fingerprints and same-case verification.
 - Monorepo working directories, multiple named test commands and disposable dependency services; see [test environments](docs/TEST-ENVIRONMENTS.md).
 - Bounded repair attempts, task retries, publication retries, call/token budgets and process-tree cleanup.
 - Failure categories and bounded phase-level environment retries; unstable failures or changed discovery block automatic repair.
@@ -77,7 +84,7 @@ Developer preview. See [verification coverage](docs/VERIFICATION.md) for the cur
 
 ## Setup
 
-Download a [1.0.0 portable release](https://github.com/indada/repopilot/releases/tag/v1.0.0) for Linux, Windows or macOS to run without installing Node.js. See [portable quickstart](docs/QUICKSTART.md). The following commands are for source installations.
+Download a [1.1.0 portable release](https://github.com/indada/repopilot/releases/tag/v1.1.0) for Linux, Windows or macOS to run without installing Node.js. See [portable quickstart](docs/QUICKSTART.md). The following commands are for source installations.
 
 Node.js 22 recommended, npm and Git. Test and agent execution requires Docker with Linux containers.
 
@@ -147,7 +154,7 @@ Publication rechecks SHAs and description. Existing branches/PRs are reusable on
 
 ## Operations and limits
 
-Development builds after 1.0.0 include `recover` to preview and explicitly clean owned crash leftovers and retain interrupted task evidence. See [recovery](docs/RECOVERY.md) for lock states, preview tokens and legacy-resource handling.
+Version 1.1.0 includes `recover` to preview and explicitly clean owned crash leftovers and retain interrupted task evidence. See [recovery](docs/RECOVERY.md) for lock states, preview tokens and legacy-resource handling.
 
 Task management commands:
 
@@ -169,7 +176,7 @@ Reports and snapshots live in .repopilot-data. Each task has JSON and Markdown; 
 
 Task timeout, maxCalls, maxAttempts and maxTaskExecutions are bounded. maxTokens accounts for reported usage after each model call; a single call may exceed it. It is not a hard monetary budget.
 
-Public text-only repositories, up to 10,000 files / 16 MiB. Symlinks, submodules, binaries and case collisions fail closed. Context is batched around changed files plus related imports/tests; oversized individual files fail explicitly. One controller runs serially. After a crash, verify the old process stopped before removing the lock; inspect leftover named containers separately.
+Public text-only repositories, up to 10,000 files / 16 MiB. Symlinks, submodules, binaries and case collisions fail closed. Context is batched around changed files plus related imports/tests; oversized individual files fail explicitly. One controller runs serially. After a crash, use the recovery preview and validated apply flow; legacy locks and resources require manual inspection.
 
 No dashboard, webhook server, distributed queue, browser E2E, automatic dependency installation or fork execution. Test execution is evidence, not tamper-proof attestation against malicious code. See SECURITY.md.
 

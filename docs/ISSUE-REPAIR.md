@@ -1,6 +1,6 @@
 # Issue reproduction and repair
 
-Development feature after 1.0.0. Existing 1.0.0 binaries do not include `fix`.
+Available in 1.1.0 through `fix --issue`. Use the matching 1.1.0 Agent image.
 
 ```sh
 npm run dev -- fix --issue 123 --config config.local.json

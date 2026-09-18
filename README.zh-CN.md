@@ -1,10 +1,10 @@
 # RepoPilot
 
-**基于 OpenAI Codex SDK 构建、可本地部署的 GitHub PR 自动化测试与修复 Agent。**
+**基于 OpenAI Codex SDK、以独立验证驱动的自动化迭代 Agent，可部署在自己的机器上。**
 
 [English](README.md) · [架构说明](docs/ARCHITECTURE.md) · [测试环境](docs/TEST-ENVIRONMENTS.md) · [安全边界](SECURITY.md)
 
-RepoPilot 帮助仓库维护者把 PR 中的代码与需求描述转化为可检查的测试证据和修复建议。项目使用 Codex 审查仓库规范、生成需求测试和提出修复，再由独立 Docker 执行器验证代码。验证通过后，控制器可以建立修复分支和草稿 PR，由维护者决定是否合并。
+RepoPilot 将 GitHub Issue 与 PR 转化为“生成测试 → 复现问题 → 修复代码 → 独立验证”的有限轮次迭代流程。项目使用 Codex 审查仓库规范、生成需求测试和提出修复，再由独立 Docker 执行器验证代码。验证通过后，控制器可以建立修复分支和草稿 PR，由维护者决定是否合并。
 
 ## 解决什么问题？
 
@@ -12,6 +12,7 @@ RepoPilot 帮助仓库维护者把 PR 中的代码与需求描述转化为可检
 
 | 维护中的问题 | RepoPilot 的处理方式 |
 | --- | --- |
+| Issue 描述了问题，却没有回归测试 | Codex 根据 Issue 原文提出测试，稳定复现失败后才进入修复。 |
 | PR 引入了已有测试没有覆盖的行为 | Codex 根据需求描述和代码生成新测试，执行器对比 base 与 head 的结果。 |
 | AGENTS.md 中的项目规范容易被遗漏 | 静态规则与 Codex 语义审查读取可信基线规范，结论附规则原文和代码证据。 |
 | 修复建议缺乏可复现的验证 | 修复前冻结测试；候选代码必须保留相同用例，并通过独立执行及规范复查。 |
@@ -21,11 +22,11 @@ RepoPilot 帮助仓库维护者把 PR 中的代码与需求描述转化为可检
 ## 适合哪些用户？
 
 - **开源项目维护者**：希望辅助审查同仓库 PR、核对贡献规范，并补充回归测试证据。
-- **中小型 JavaScript/TypeScript 团队**：希望补充测试覆盖并获得修复建议，同时自行掌握运行环境和合并决策。
-- **测试与研发效能工程师**：维护 Node/Vitest 测试、Monorepo，以及依赖数据库或 Redis 的测试环境。
+- **中小型研发团队**：希望补充测试覆盖并获得修复建议，同时自行掌握运行环境和合并决策。
+- **测试与研发效能工程师**：维护 JavaScript、Python、Go 或 Java 测试、Monorepo，以及依赖数据库或 Redis 的测试环境。
 - **基于 Codex 开发工具的开发者**：希望参考 SDK 编排、结构化模型输出、独立验证和有限轮次修复的开源实现。
 
-以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库；开发版支持 Node、Vitest、pytest、Go 和兼容的 JUnit XML 测试证据。暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
+以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库；1.1.0 支持 Node、Vitest、pytest、Go 和兼容的 JUnit XML 测试证据。暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
 
 ## 与 Codex、OpenAI 的直接关系
 
@@ -45,32 +46,38 @@ RepoPilot 的智能审查、测试规划和修复提案直接调用 `@openai/cod
 
 控制器、测试执行与报告保存在自己的机器或工作节点上；模型调用仍使用 OpenAI 服务，并发送选取的仓库文本与任务上下文。本地部署不等于离线模型推理。GitHub 凭据保留在控制器中。项目采用 MIT 许可证，是基于 Codex 构建的独立开源项目。
 
-## 一个典型使用场景
+## 自动化迭代流程
 
 假设某个 PR 新增输入校验规则：Codex 根据需求生成边界测试，RepoPilot 在 base 与 head 上分别执行。新需求测试在 base 失败、head 通过时，必须有 PR 需求原文支撑；已有行为在 base 通过、head 失败时，才成为回归候选。可重复的回归或符合修复条件的规范错误，才进入修复流程。
 
 ```mermaid
 flowchart LR
     A[PR 代码与需求描述] --> B[固定提交并读取可信规范]
+    I[指定 GitHub Issue] --> J[固定目标分支并复现问题]
     B --> C[Codex 审查与测试规划]
     C --> D[独立执行 base 与 head 测试]
     D --> E[生成证据报告]
     D --> F[符合条件的问题：Codex 提出修复]
+    J --> F
     F --> G[验证冻结测试与仓库规范]
-    G --> H[可选发布修复分支和草稿 PR]
+    G -->|验证通过| H[可选发布修复分支和草稿 PR]
+    G -->|符合重试条件且未超限| F
+    H --> R[维护者审查并决定合并]
 ```
 
 可以先运行本地 `check`，再用 `watch` 轮询 GitHub PR；需要提交已验证的修复供人工审查时，再开启 `publish`。Agent 审查、修复及发布分别配置，示例配置默认关闭这三项。
 
+处理 Issue 时，通过 `fix --issue 123 --config config.local.json` 指定问题：先确认原始测试基线通过，再用新增的冻结测试稳定复现，随后尝试修复。迭代受尝试次数、调用次数及超时约束；证据不足时停止并转人工检查。Issue 由维护者指定，项目不会自行决定产品路线或自动合并代码。
+
 ## 已实现的代码功能
 
-1.0.0 之后的开发版新增 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)，命令为 `fix --issue`；同时支持 [pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md)。现有 1.0.0 下载包不含这些功能，使用时须从同一源码版本构建控制器和 Agent 镜像。
+**1.1.0** 已包含 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)、[pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md) 和[崩溃恢复](docs/RECOVERY.md)。下载包与 Agent 镜像应使用匹配的 1.1.0 版本。
 
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。
 - 从 base 读取规则，支持嵌套 AGENTS.md、静态文本规则、JS/TS AST 调用规则、规则冲突检查、历史问题去重及带有效期的规则豁免。
 - 语义结论必须引用可信规范原文和对应代码证据。
 - 根据 PR 需求主动生成测试计划和新测试文件；生成后冻结，修复阶段不能改动。
-- Node 内置测试与 Vitest JSON 用例解析；零测试、全跳过、报告异常不能算通过。
+- Node、Vitest、pytest、Go 和兼容 JUnit XML 的结构化用例解析；零测试、全跳过、报告异常不能算通过。
 - 子目录与 Monorepo 多命令测试，支持 Redis、数据库等临时依赖服务、就绪检查和异常清理；详见[测试环境配置](docs/TEST-ENVIRONMENTS.md)及[示例](examples/monorepo.json)。
 - 使用文件路径和完整用例名定位测试，重复失败指纹一致才进入回归修复；修复后核验相同用例通过。
 - 检查原始基线用例是否被删除、跳过或隐藏；拒绝通过修改测试、配置和规范来修复。
@@ -82,7 +89,7 @@ flowchart LR
 
 ## 启动
 
-直接使用可下载 [1.0.0 便携包](https://github.com/indada/repopilot/releases/tag/v1.0.0)，支持 Linux、Windows、macOS，内置 Node.js，无需 npm 安装。参见[便携版快速入门](docs/QUICKSTART.md)。以下为源码安装方式。
+直接使用可下载 [1.1.0 便携包](https://github.com/indada/repopilot/releases/tag/v1.1.0)，支持 Linux、Windows、macOS，内置 Node.js，无需 npm 安装。参见[便携版快速入门](docs/QUICKSTART.md)。以下为源码安装方式。
 
 需要 Node.js 22、Git，以及用于执行目标测试和 Agent 的 Linux Docker 容器。
 
@@ -142,7 +149,7 @@ maxCalls 限制每次任务执行的模型调用数量。maxTokens 根据每次�
 
 ## 任务管理 CLI
 
-1.0.0 之后的开发版新增 `recover`：先预览，再校验预览令牌清理当前数据目录所属的遗留资源，并保留中断任务证据。已发布的 1.0.0 下载包不含此命令。参见[崩溃恢复说明](docs/RECOVERY.md)。
+1.1.0 提供 `recover`：先预览，再校验预览令牌清理当前数据目录所属的遗留资源，并保留中断任务证据。参见[崩溃恢复说明](docs/RECOVERY.md)。
 
 ```powershell
 npm run dev -- tasks list --config config.local.json --status running --limit 20 --offset 0
@@ -166,6 +173,6 @@ npm run dev -- tasks rerun 任务ID --config config.local.json
 
 项目处于开发预览阶段，当前验证范围与回归覆盖见[验证记录](docs/VERIFICATION.md)，执行边界见[安全说明](SECURITY.md)。
 
-首版处理公开、文本型、同仓库 PR；不自动执行 fork PR。二进制、符号链接、子模块及大小写冲突路径会报错。单控制器串行执行；崩溃遗留锁仍需确认旧进程停止后人工清理。没有 Web 界面、分布式队列、浏览器 E2E、自动安装依赖或自动合并。
+当前处理公开、文本型仓库中的指定 Issue 与同仓库 PR；不自动执行 fork PR。二进制、符号链接、子模块及大小写冲突路径会报错。单控制器串行执行；崩溃后使用恢复预览及令牌校验流程，旧版锁和资源仍须人工核验。没有 Web 界面、分布式队列、浏览器 E2E、自动安装依赖或自动合并。
 
 报告可能包含代码和日志，请按项目的数据保留要求管理。JSON 保留完整的受大小限制输出，Markdown 和 PR 展示截短摘要。独立开源项目，非 OpenAI 官方产品。
