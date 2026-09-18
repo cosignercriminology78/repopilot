@@ -5,14 +5,23 @@
   "description": "Local-first GitHub policy checks, regression testing and verified repair branches powered by Codex.",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20.3"
+  },
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc",
     "start": "node dist/cli.js",
     "test": "tsx --test tests/*.test.ts",
-    "check": "tsc --noEmit"
+    "check": "tsc -p tsconfig.check.json"
   },
-  "dependencies": { "@openai/codex-sdk": "0.155.0", "zod": "4.6.5" },
-  "devDependencies": { "@types/node": "^22.0.0", "tsx": "4.23.13", "typescript": "7.0.2" }
+  "dependencies": {
+    "@openai/codex-sdk": "0.155.0",
+    "typescript": "5.9.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "4.23.13"
+  }
 }

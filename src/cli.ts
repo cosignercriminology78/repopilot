@@ -8,10 +8,12 @@ import { Store } from './store.js';
 import { resolveCommit, snapshot } from './git.js';
 import { DockerRunner } from './runner.js';
 import { DockerCodexAgent } from './agent.js';
-import { runPipeline } from './pipeline.js';
+import { runPipeline, descriptionHash } from './pipeline.js';
+import { withFreshness } from './control.js';
+import { finishReport } from './publication.js';
 import { GitHub } from './github.js';
 import { checked } from './process.js';
-import type { PullRequest, Report } from './types.js';
+import type { Report } from './types.js';
 
 const { positionals, values } = parseArgs({ allowPositionals: true, options: {
   config: { type: 'string' }, repo: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' },
@@ -36,8 +38,8 @@ async function main() {
   const store = new Store(config.dataDir), release = await store.acquire();
   const runner = config.runner ? new DockerRunner(config.runner, config.dataDir) : undefined;
   const agent = config.agent.enabled ? new DockerCodexAgent(config.agent, config.dataDir) : undefined;
-  const github = new GitHub(config.repository);
   const abort = new AbortController();
+  const github = new GitHub(config.repository, undefined, { signal: abort.signal, retry: config.retry });
   const stop = () => abort.abort();
   process.once('SIGINT', stop); process.once('SIGTERM', stop);
   try {
@@ -45,7 +47,7 @@ async function main() {
       if (!values.repo || !values.base || !values.head) throw new Error('check requires --repo, --base and --head.');
       const repo = resolve(values.repo);
       const baseSha = await resolveCommit(repo, values.base), headSha = await resolveCommit(repo, values.head);
-      const report = await runPipeline({ base: await snapshot(repo, baseSha), head: await snapshot(repo, headSha), baseSha, headSha }, config, store, runner, agent);
+      const report = await runPipeline({ base: await snapshot(repo, baseSha, abort.signal), head: await snapshot(repo, headSha, abort.signal), baseSha, headSha }, config, store, runner, agent, abort.signal);
       print(report); process.exitCode = ['passed', 'verified'].includes(report.status) ? 0 : 2;
       return;
     }
@@ -58,28 +60,24 @@ async function main() {
         if (summary.draft || summary.head.repo?.full_name !== config.repository || summary.head.ref.startsWith('autofix/')) continue;
         try {
           const pr = await github.pull(summary.number);
-          if (pr.state !== 'open' || pr.head.repo?.full_name !== config.repository) continue;
-          await checked('git', ['-c', 'core.hooksPath=/dev/null', 'fetch', '--no-tags',
-            `https://github.com/${config.repository}.git`, pr.base.sha, pr.head.sha], cache);
-          const report = await runPipeline({ base: await snapshot(cache, pr.base.sha), head: await snapshot(cache, pr.head.sha),
-            baseSha: pr.base.sha, headSha: pr.head.sha, pr, description: `${pr.title}\n${pr.body ?? ''}` }, config, store, runner, agent);
-          await finish(report, pr); print(report);
+          if (pr.state !== 'open' || pr.draft || pr.head.ref.startsWith('autofix/') || pr.head.repo?.full_name !== config.repository) continue;
+          const report = await withFreshness(async signal => {
+            await checked('git', ['-c', 'core.hooksPath=/dev/null', 'fetch', '--no-tags',
+              `https://github.com/${config.repository}.git`, pr.base.sha, pr.head.sha], cache, signal);
+            return runPipeline({ base: await snapshot(cache, pr.base.sha, signal), head: await snapshot(cache, pr.head.sha, signal),
+              baseSha: pr.base.sha, headSha: pr.head.sha, pr, description: `${pr.title}\n${pr.body ?? ''}` }, config, store, runner, agent, signal);
+          }, async () => {
+            const latest = await github.pull(pr.number);
+            return latest.state === 'open' && !latest.draft && latest.head.repo?.full_name === config.repository
+              && latest.head.sha === pr.head.sha && latest.base.sha === pr.base.sha && descriptionHash(latest) === descriptionHash(pr);
+          }, config.freshnessSeconds * 1000, abort.signal);
+          await finishReport(report, config, store, github, abort.signal); print(report);
         } catch (error) { console.error(`PR #${summary.number}: ${String(error)}`); }
       }
       if (!values.once && !abort.signal.aborted) await sleep(config.pollSeconds * 1000, undefined, { signal: abort.signal }).catch(() => undefined);
     } while (!values.once && !abort.signal.aborted);
   } finally { process.off('SIGINT', stop); process.off('SIGTERM', stop); await release(); }
 
-  async function finish(report: Report, _pr: PullRequest) {
-    if (report.status === 'published' || report.status === 'stale') return;
-    if (!await github.current(report)) report.status = 'stale';
-    else if (config.publish && report.status === 'verified') {
-      const url = await github.publish(report);
-      if (url) { report.pullRequestUrl = url; report.status = 'published'; }
-      else report.status = 'stale';
-    }
-    await store.save(report);
-  }
   function print(report: Report) {
     console.log(JSON.stringify({ id: report.id, status: report.status, findings: report.findings.length,
       tests: report.tests.head.status, semantic: report.semantic,

@@ -1,11 +1,19 @@
-export type Snapshot = Map<string, string>;
+export type FileMode = '100644' | '100755';
+export type Snapshot = Map<string, string> & { modes?: Map<string, FileMode> };
 export interface Finding {
   ruleId: string; path: string; line: number; message: string;
   source: string; severity: 'error' | 'warning'; kind: 'static' | 'semantic';
+  ruleQuote?: string; evidence?: string;
+}
+export interface TestCase {
+  id: string; file: string; name: string;
+  status: 'passed' | 'failed' | 'skipped'; durationMs: number;
+  failure?: string; fingerprint?: string;
 }
 export interface TestResult {
   status: 'passed' | 'failed' | 'error' | 'not_run';
   exitCode: number | null; output: string; durationMs: number;
+  cases: TestCase[]; structured: boolean; reason?: string;
 }
 export interface PullRequest {
   number: number; title: string; body: string; state: string; draft: boolean;
@@ -13,11 +21,24 @@ export interface PullRequest {
   base: { sha: string; ref: string; repo: { full_name: string } };
 }
 export interface RepairChange { path: string; content: string; }
+export interface TestPlan {
+  summary: string;
+  scenarios: { name: string; requirement: string; testFile: string }[];
+  tests: RepairChange[];
+}
+export interface TestEvidence { phase: string; attempt: number; result: TestResult; }
+export interface RepairAttempt { number: number; changes: RepairChange[]; summary: string; accepted: boolean; reason?: string; }
 export interface Report {
-  id: string; repository: string; pr?: number; base: string; head: string;
-  status: 'running' | 'passed' | 'needs_attention' | 'verified' | 'published' | 'stale' | 'error';
-  findings: Finding[]; historical: Finding[]; semantic: 'not_run' | 'completed';
+  schemaVersion: 2; id: string; repository: string; pr?: number; base: string; head: string;
+  descriptionHash: string;
+  status: 'running' | 'passed' | 'needs_attention' | 'verified' | 'published' | 'stale' | 'cancelled' | 'error';
+  findings: Finding[]; historical: Finding[]; suppressed: { finding: Finding; reason: string; expiresAt: string }[];
+  semantic: 'not_run' | 'completed';
   tests: { base: TestResult; head: TestResult; repaired?: TestResult };
+  plan?: TestPlan; evidence: TestEvidence[]; repairs: RepairAttempt[];
   changes: RepairChange[]; attempts: number; notes: string[]; createdAt: string;
+  executions: number; retryAfter?: string; retryable: boolean;
+  agentUsage?: { calls: number; tokens: number };
   pullRequestUrl?: string;
+  publication?: { attempts: number; retryAfter?: string; error?: string; retryable: boolean };
 }

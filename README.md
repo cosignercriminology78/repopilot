@@ -1,34 +1,27 @@
 # RepoPilot
 
-**Local-first GitHub policy checks, regression testing, and verified repair branches powered by Codex.**
+**Local-first GitHub policy checks, test generation and verified repair branches powered by Codex.**
 
-[中文说明](README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Security boundaries](SECURITY.md)
+[中文说明](README.zh-CN.md) · [Architecture](docs/ARCHITECTURE.md) · [Security](SECURITY.md) · [Verification](docs/VERIFICATION.md)
 
-RepoPilot watches pull requests, checks the repository's trusted rules, runs base/head tests in disposable containers, and proposes a separate repair branch when a fix passes verification. It never merges repairs automatically.
+RepoPilot watches pull requests, checks trusted base-branch rules, generates tests from PR requirements, and proposes a separate repair branch after independent verification. It never merges automatically.
 
-**Status: early developer preview.** The controller and safety gates have automated tests. The initial implementation has not yet completed a live Docker + Codex + GitHub repair acceptance run. See [verification notes](docs/VERIFICATION.md). Do not connect this preview to sensitive production repositories.
+## Implemented
 
-## Included in 0.1
+- Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
+- Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.
+- Nested AGENTS.md semantic review with verbatim rule/code citations and historical finding comparison.
+- Proactive test plans and new test files, frozen before production-code repair.
+- Structured Node and Vitest results: test discovery, stable identities, repeated failure fingerprints and same-case verification.
+- Bounded repair attempts, task retries, publication retries, call/token budgets and process-tree cleanup.
+- Separate autofix branches/draft PRs, executable-mode preservation and collision-safe publication recovery.
+- Atomic JSON reports, Markdown evidence summaries, previous-execution archives and exclusive controller lock.
 
-- Local commit comparison and GitHub polling, pinned to base/head SHAs.
-- Trusted `.repopilot/policy.json` from the base commit; nested `AGENTS.md` context for semantic review.
-- Literal static rules with file-extension and directory scope; historical finding deduplication.
-- Offline Docker test runner with resource/time limits and no GitHub credentials.
-- Codex SDK adapter inside a separate container; structured review and proposed file replacements.
-- Bounded repair attempts, protected-file checks, regression reproduction and independent retesting.
-- Separate `autofix/` branches and draft PRs, with stale-head checks and interrupted-publication recovery.
-- Atomic JSON task records and a single-controller lock. No database service required.
+This developer preview has offline tests for its controller and verification gates. No live Docker + Codex + GitHub repair acceptance run is claimed.
 
-## Prerequisites
+## Setup
 
-- Node.js 20+ (22 LTS recommended), npm, Git.
-- Docker with Linux containers for running tests or Codex.
-- `GITHUB_TOKEN` (or `GH_TOKEN`) in the controller environment for authenticated polling/publishing. Publishing requires repository Contents and Pull requests write permissions.
-- `OPENAI_API_KEY` for the Codex container. This preview does not mount or reuse desktop ChatGPT login credentials.
-
-GitHub credentials stay in the controller. Only the dedicated agent container receives the OpenAI key. You pay the model provider's API usage charges; this project does not provide credits.
-
-## Quick start
+Node.js 22 recommended, npm and Git. Test and agent execution requires Docker with Linux containers.
 
 ```sh
 npm ci
@@ -38,69 +31,69 @@ npm run build
 cp repopilot.example.json config.local.json
 ```
 
-Edit `repository` and the trusted test command in `config.local.json`. Keep this controller configuration outside the repository snapshot being reviewed.
+PowerShell can use Copy-Item instead of cp. Set repository and the trusted test command in the local config, outside reviewed snapshots.
 
 ```sh
-# A test image must contain the runtime and dependencies the repository requires.
-docker pull node:22-bookworm-slim
-
-# Compare a local repository without editing its working tree.
 npm run dev -- check --config config.local.json --repo /path/to/project --base main --head feature
-
-# Poll open, non-draft, same-repository PRs once or continuously.
 npm run dev -- watch --config config.local.json --once
 npm run dev -- watch --config config.local.json
 ```
 
-PowerShell: use `Copy-Item repopilot.example.json config.local.json` instead of `cp` if preferred. Docker Desktop must run Linux containers.
+Local check never publishes or edits the source checkout. Watch polls non-draft same-repository PRs, excluding autofix branches. Publishing requires publish=true.
 
-The example uses `node --test` and needs no dependency installation. Tests run **without network access**. For Vitest or other frameworks, prepare a trusted image containing the project's pinned dependencies and configure an explicit command. RepoPilot does not run `npm install` on the host or download dependencies while testing.
+The default reporter is node with node --test. Build first to produce the trusted reporter. For Vitest, set reporter=vitest and use an explicit vitest run command backed by a trusted image containing pinned dependencies. Tests have no network and no dependency installation. Reporter flags belong to the controller. reporter=command collects output only and cannot verify or publish.
 
-For a policy-only run, omit `runner`. The report will say `not_run` for tests and will not claim an overall pass. Reports and exported inputs live under `.repopilot-data/`; retain or remove them according to your data policy.
+Omit runner for policy-only review; tests remain not_run. Zero/all-skipped tests, malformed reports and missing test identities never count as passing.
 
-## Repository rules
+## Trusted rules
 
-Commit `.repopilot/policy.json` to the **target repository's base branch**:
+Commit .repopilot/policy.json to the target base branch; see [examples](examples/policy.json).
 
 ```json
 {
   "rules": [
     {
       "id": "no-disabled-tests",
+      "kind": "forbid-call",
       "extensions": [".ts", ".js"],
-      "forbiddenText": "test.skip(",
+      "callee": "test.skip",
       "message": "Keep regression tests enabled.",
       "severity": "error"
     }
-  ]
+  ],
+  "exceptions": []
 }
 ```
 
-See [example rules](examples/policy.json). Static rules deliberately use literal matching, not arbitrary executable plugins or unbounded regular expressions. They can match comments too; use scoped rules and treat results as a review aid, not a SQL/AST parser. Human-readable `AGENTS.md` rules are reviewed semantically only when the agent is enabled. Parent instructions are supplied before child instructions with their source paths.
+Kinds are literal (forbiddenText), forbid-call and require-call (callee). AST rules inspect direct/qualified calls and string property access; they do not resolve aliases or perform whole-program analysis. Literal rules can match comments. Overlapping require/forbid rules conflict and stop review.
 
-A PR that changes its own rules still uses the pinned base rules and requires manual attention. Changed rule files cannot silently authorize auto-repair.
+Exceptions specify ruleId, exact path, reason, expiresAt (UTC ISO timestamp), and optional exact evidence. They come only from base policy; expired exceptions do not suppress findings. Nested base AGENTS.md rules are supplied by scope for semantic review. Prose conflicts still require human interpretation.
 
-## Enable Codex and repair
+PRs changing trusted rule files require maintainer review and cannot authorize their own repair.
+
+## Codex and repair
 
 ```sh
 docker build -f Dockerfile.agent -t repopilot-agent:local .
 ```
 
-Set environment credentials outside tracked files. Enable `agent.enabled` for semantic review; enable `agent.repair` for repair attempts. Set `publish: true` only when you want the watcher to push repair branches and create draft PRs. Local `check` never publishes.
+Set OPENAI_API_KEY in the controller environment; only the agent container receives it. GITHUB_TOKEN or GH_TOKEN stays in the controller. Publishing requires repository Contents and Pull requests write permissions. Desktop ChatGPT credentials are not reused.
 
-The SDK runs in a separate container and returns proposed full-file replacements. It does not receive the GitHub token or a writable host checkout. The controller rejects changes to existing tests, policies, manifests, configuration, workflows, hidden paths and unsupported file types. It executes accepted candidates in fresh test containers.
+agent.enabled enables semantic review and test planning. agent.repair enables repair proposals. The SDK runs in a separate container with no writable host checkout; the controller applies validated file replacements to independent snapshots.
 
-Automatic repair requires passing base tests, a new static error or reproducible test regression, no policy changes, and no unresolved semantic error. Ambiguous semantic findings remain for human review. Regression repair requires an additional test file and a failing original candidate run followed by a passing repaired run. This is suite-level evidence, not proof that a specific new test was discovered or failed; test-level adapters are planned.
+Automatic repair needs passing baseline evidence. Generated tests run on both base and head; if new-feature requirements do not pass on base, the task conservatively requires human review. Regressions must repeat with identical failing identities/fingerprints. Repair candidates must preserve and pass original base/head/generated cases and pass static/semantic rechecks. Existing tests, manifests, configuration, policies and hidden paths are protected.
 
-## Operational limits
+Publication rechecks SHAs and description. Existing branches/PRs are reusable only when their parent/tree match the verified result. No force push or automatic merge.
 
-- Public, text-only repositories; same-repository PRs only. Fork PRs and `autofix/` branches are skipped.
-- Symlinks, submodules, binary/non-UTF8 files are rejected, not silently dropped. Snapshots are limited to 10,000 files / 16 MiB and the agent context to 500 KB.
-- One controller and one task at a time. A crashed controller leaves a lock; verify the old process is gone before manually removing it. Interrupted `running` reports rerun on restart; terminal reports deduplicate.
-- Model changes are suggestions. Passing the configured command does not guarantee absence of bugs or security issues. Choose a command that fails when no tests are found.
-- Repair attempts and time are bounded; per-task token/currency budgets are not implemented yet.
-- No web dashboard, automatic dependency setup, webhook ingress, browser E2E adapter, rule exceptions UI or auto-merge in this version.
-- GitHub branch creation and PR creation are retriable but not transactional with source updates. A late source update may leave an unused repair branch.
+## Operations and limits
+
+Reports and snapshots live in .repopilot-data. Each task has JSON and Markdown; retries archive previous evidence as TASK.execution-N.json. JSON holds bounded full outputs and candidate patches; Markdown/PR output is abbreviated.
+
+Task timeout, maxCalls, maxAttempts and maxTaskExecutions are bounded. maxTokens accounts for reported usage after each model call; a single call may exceed it. It is not a hard monetary budget.
+
+Public text-only repositories, up to 10,000 files / 16 MiB. Symlinks, submodules, binaries and case collisions fail closed. Context is batched around changed files plus related imports/tests; oversized individual files fail explicitly. One controller runs serially. After a crash, verify the old process stopped before removing the lock; inspect leftover named containers separately.
+
+No dashboard, webhook server, distributed queue, browser E2E, automatic dependency installation or fork execution. Test execution is evidence, not tamper-proof attestation against malicious code. See SECURITY.md.
 
 ## Development
 
@@ -110,4 +103,4 @@ npm test
 npm run build
 ```
 
-Tests use synthetic repositories and mocked agent/runner/API adapters; they do not need model credits or GitHub writes. Contributions improving verification evidence, isolation, and test adapters are welcome. MIT licensed; independent project, not an official OpenAI product.
+Tests use mocked APIs/agents/runners and synthetic local Git/Node fixtures. They do not use model credits, launch Docker or write GitHub content. MIT licensed; independent project, not an official OpenAI product.

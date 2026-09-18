@@ -1,0 +1,30 @@
+import type { GitHub } from './github.js';
+import type { Config } from './config.js';
+import type { Report } from './types.js';
+import type { Store } from './store.js';
+import { RetryableError } from './control.js';
+/** Persist intent before any write, so crash recovery consumes the same bounded budget. */
+export async function finishReport(report: Report, config: Config, store: Store,
+  github: Pick<GitHub, 'current' | 'publish'>, signal?: AbortSignal): Promise<void> {
+  if (report.status === 'published' || report.status === 'stale') return;
+  if (!await github.current(report)) report.status = 'stale';
+  else if (config.publish && report.status === 'verified') {
+    const prior = report.publication;
+    if (prior && (!prior.retryable || prior.attempts >= config.retry.maxTaskExecutions
+      || Date.parse(prior.retryAfter ?? '') > Date.now())) return;
+    report.publication = { attempts: (prior?.attempts ?? 0) + 1, retryable: true };
+    await store.save(report);
+    try {
+      const url = await github.publish(report);
+      if (url) { report.pullRequestUrl = url; report.status = 'published'; report.publication.retryable = false; }
+      else report.status = 'stale';
+    } catch (error) {
+      report.publication.error = String(error);
+      report.publication.retryable = error instanceof RetryableError || !!signal?.aborted;
+      report.publication.retryAfter = new Date(Date.now() + Math.max(error instanceof RetryableError ? error.retryAfterMs : 0,
+        Math.min(config.retry.maxDelayMs, config.retry.baseDelayMs * 2 ** (report.publication.attempts - 1)))).toISOString();
+      report.notes.push('Publication: ' + String(error));
+    }
+  }
+  await store.save(report);
+}

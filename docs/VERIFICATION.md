@@ -1,21 +1,25 @@
-# Verification — initial developer preview
+# Verification
 
-Validated locally on Windows with Node.js 21.1.0:
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 34 offline regression tests and compilation.
 
-- TypeScript strict type checking and compilation.
-- Policy source pinning and nested instruction scopes.
-- Historical finding deduplication and duplicate occurrence detection.
-- Unsafe paths, protected-file repair rejection and invalid semantic citations.
-- Mocked repair success, missing tests, infrastructure failure, historical failure, attempt limits and task deduplication.
-- Controller lock exclusion and release.
-- Mocked GitHub stale-head and fork protection.
-- Synthetic Git repository snapshot and CLI smoke tests (no real project code).
+Coverage includes:
 
-Not yet validated end to end:
+- Trusted policy, nested instructions, AST calls versus comments/strings, contradictory rules and exception expiration.
+- Historical occurrence matching, scoped verbatim citations and protected-path rejection.
+- Proactive plans, frozen tests, discovery checks, same-case red/green checks and changing failure fingerprints.
+- Zero/skipped/duplicate/outside-root/contradictory reports and Vitest JSON fixtures.
+- Real Node test-runner events from a small synthetic local fixture: nested suites, assertions, skips and module-load failures.
+- Cancellation of a synthetic child process, freshness monitor and bounded retry timing.
+- Description changes, persistent task execution limits, controller lock and deduplication.
+- Mock GitHub stale/draft/fork protection and executable-mode publication.
+- Synthetic local Git snapshot and CLI comparison without modifying a real source checkout.
 
-- Docker is absent on the initial development machine; no real test/agent containers were launched.
-- No paid Codex inference was invoked.
-- No automatic repair branch/PR was published against a live source PR.
-- Linux CI results are checked separately after the initial repository push.
+Commands:
 
-Run `npm run check`, `npm test`, and `npm run build`. Passing these checks does not imply the untested Docker/model integration is production-ready.
+```sh
+npm run check
+npm test
+npm run build
+```
+
+No real Docker container, Codex inference, or GitHub repair PR is invoked by these tests. The user's requested scope is code completeness and offline verification; live integration acceptance remains separate. Initial Linux CI success does not validate this unpushed revision.
