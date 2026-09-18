@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { goalStepSchema } from './iteration.js';
 
 export const answerSchema = z.object({
+  steps: z.array(goalStepSchema).max(20).optional(),
   findings: z.array(z.object({
     ruleId: z.string().min(1), path: z.string(), line: z.number().int().positive(),
     message: z.string().min(1), source: z.string(), severity: z.enum(['error', 'warning']),

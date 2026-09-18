@@ -1,6 +1,7 @@
 import { DockerCodexAgent } from '../adapters/codex/docker-agent.js';
 import { GitHub } from '../adapters/github/client.js';
 import { Store } from '../adapters/storage/file-store.js';
+import { FileIterationStore } from '../adapters/storage/iteration-store.js';
 import { gitRepository } from '../adapters/storage/repository.js';
 import { DockerRunner } from '../adapters/testing/docker-runner.js';
 import { DockerRecoveryResources } from '../adapters/testing/recovery-resources.js';
@@ -14,6 +15,7 @@ import { check } from './commands/check.js';
 import { inspectTasks, runTask } from './commands/tasks.js';
 import { watchCommand } from './commands/watch.js';
 import { doctor, initialize } from './commands/setup.js';
+import { executeGoals, inspectGoals, validateGoalCommand } from './commands/goals.js';
 import { loadConfig } from './config.js';
 import { reportExitCode, reportSummary } from './output.js';
 import type { Output, Runtime } from './runtime.js';
@@ -25,7 +27,7 @@ export async function main(args: string[], output: Output = standardOutput): Pro
   if (values.help || !command) { output.write(help); return 0; }
   if (command === 'init') return initialize(values, output);
   if (command === 'doctor') return doctor(values, output);
-  if (!values.config || !['check', 'watch', 'tasks', 'recover', 'fix'].includes(command)) throw new Error('Use check, watch, tasks, fix or recover with --config.');
+  if (!values.config || !['check', 'watch', 'tasks', 'recover', 'fix', 'goals', 'iterate', 'discover', 'experiences'].includes(command)) throw new Error('Use a repository command with --config; see --help.');
   const config = await loadConfig(values.config), store = new Store(config.dataDir);
   if (command === 'recover') {
     const lock = new ControllerLock(config.dataDir), resources = new DockerRecoveryResources(config.dataDir);
@@ -37,6 +39,9 @@ export async function main(args: string[], output: Output = standardOutput): Pro
     output.write(JSON.stringify(await recoveryPreview(config.repository, store, lock, resources), null, 2)); return 0;
   }
   const action = positionals[1], task = positionals[2];
+  validateGoalCommand(command, action, task, values);
+  const goals = new FileIterationStore(config.dataDir);
+  if (await inspectGoals(command, action, task, values, config, goals, output)) return 0;
   if (command === 'tasks' && await inspectTasks(action, task, values, config, store, output)) return 0;
   const release = await store.acquire();
   const abort = new AbortController(), stop = () => abort.abort();
@@ -48,6 +53,10 @@ export async function main(args: string[], output: Output = standardOutput): Pro
       agent: config.agent.enabled ? new DockerCodexAgent(config.agent, config.dataDir,
         config.runner ? describeTestEnvironment(config.runner) : undefined) : undefined,
       github };
+    if (['goals', 'iterate', 'discover'].includes(command)) return executeGoals(command, action, task, values, {
+      ...runtime, goals, github,
+      previewRunner: config.iteration?.preview ? new DockerRunner(config.iteration.preview, config.dataDir) : undefined
+    }, output);
     if (command === 'watch') { await watchCommand(values, runtime, output); return 0; }
     if (command === 'fix') {
       const report = await fixIssue(Number(values.issue), values.branch, { ...runtime, github });

@@ -56,6 +56,11 @@ Context batches contain whole changed files and authoritative scoped rules, with
 ## Scope
 
 Public text repositories, same-repository PRs, one serial controller, atomic files instead of SQLite. No fork execution, browser E2E, dependency installation, webhook server, dashboard or automatic merge. Containers/reporters are not hostile-code attestation. See SECURITY.md.
-# Test environment configuration
+## Test environment configuration
 
 `domain/runner-config.ts` validates single-command and multi-command execution contracts. `adapters/testing/environment.ts` owns disposable Docker networks, dependency services, readiness checks and cleanup; `docker-runner.ts` runs commands and aggregates their evidence. The application continues to depend only on the Runner port. Command-scoped case IDs preserve independent evidence across multiple suites, while legacy single-command IDs remain unchanged. See [test environments](TEST-ENVIRONMENTS.md).
+## Goal iteration extension
+
+Development builds after 1.1.0 add a goal workflow above the existing verification pipeline. `IterationStore` saves goal specifications, dependency plans, pinned inputs, cumulative changes, per-criterion attempt counters and model/time reservations under `goals/`. Each step retains its own ordinary evidence report. Recovery consumes a saved verified step before requesting more model work; final publication requires original and all completed-step evidence to remain passing.
+
+The optional Issue queue and PR maintenance loop share the controller lock and goal budgets. PR updates preserve branch ownership, compare current feedback and commits, and use non-force commits. Interrupted updates are reconciled against the complete saved Git tree. Historical experiences are scoped to repository, commit and configuration; they never grant permissions or replace runner evidence. See [iteration configuration and CLI](ITERATION.md).

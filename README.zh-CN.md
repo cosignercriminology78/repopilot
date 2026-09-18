@@ -79,6 +79,16 @@ flowchart LR
 
 ## 已实现的代码功能
 
+开发中的源码现已增加[目标驱动迭代](docs/ITERATION.md)：明确验收条件与修改范围、可恢复的分步计划、新功能实现、有限轮次验证反馈、按授权条件领取 Issue、跟进 PR、按版本使用历史经验、根据证据提出改进建议，以及隔离环境内的预发布健康检查与回滚演练。**这些新增能力尚未包含在已发布的 1.1.0 下载包中**，需要从同一份源码构建控制器和 Agent。任务选择、合并及生产上线仍由维护者掌握。
+
+```sh
+npm run dev -- goals plan --spec examples/goal.json --config config.local.json
+npm run dev -- goals run GOAL_ID --config config.local.json
+npm run dev -- goals maintain GOAL_ID --config config.local.json
+```
+
+目标文件定义“要完成什么”和“如何验收”，控制器将目标拆分为有依赖关系的步骤，每步先冻结测试，再实现和验证。遇到证据不足、输入变化或预算耗尽时停止；中断后可检查记录并恢复。队列、PR 跟进与预发布检查均需显式配置，不会因升级自动开启。预发布与回滚演练仅运行隔离 Docker 快照，不操作生产服务或真实流量。完整配置、命令及边界见[使用说明](docs/ITERATION.md)。
+
 **1.1.0** 已包含 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)、[pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md) 和[崩溃恢复](docs/RECOVERY.md)。下载包与 Agent 镜像应使用匹配的 1.1.0 版本。
 
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。

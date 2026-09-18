@@ -34,6 +34,8 @@ export interface TestPlan {
 export interface TestEvidence { phase: string; attempt: number; result: TestResult; execution?: number; }
 export interface RepairAttempt { number: number; changes: RepairChange[]; summary: string; accepted: boolean; reason?: string; }
 export interface Report {
+  goal?: { id: string; title: string; branch: string; issue?: number; issueDigest?: string;
+    queue?: { labels: string[]; trustedAuthors: string[] } };
   issue?: IssueSource;
   schemaVersion: 2; id: string; repository: string; pr?: number; base: string; head: string;
   descriptionHash: string;
@@ -46,7 +48,7 @@ export interface Report {
   testAssessment?: { eligible: boolean; reasons: string[]; cases: { id: string; outcome: 'regression' | 'new_behavior_verified' | 'preserved' | 'unresolved'; reason: string }[] };
   changes: RepairChange[]; attempts: number; notes: string[]; createdAt: string;
   executions: number; retryAfter?: string; retryable: boolean;
-  agentUsage?: { calls: number; tokens: number };
+  agentUsage?: { calls: number; tokens: number; complete?: boolean };
   pullRequestUrl?: string;
   publication?: { attempts: number; retryAfter?: string; error?: string; retryable: boolean };
   replay?: { repoPath: string; description: string; pr?: PullRequest; issue?: IssueSource; runKey?: string };

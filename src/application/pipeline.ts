@@ -3,6 +3,7 @@ import { descriptionHash, pipelineId } from '../domain/identity.js';
 import { applyExceptions, introducedFindings, loadPolicy, partitionFindings } from '../domain/policy.js';
 import { applyChanges, isTest, semanticFindings, validatePlan } from '../domain/repair.js';
 import { reproduced } from '../domain/reproduction.js';
+import { patchDigest, withinScope } from '../domain/iteration.js';
 import { changedPaths } from '../domain/snapshot.js';
 import type { RunInput } from '../domain/task.js';
 import { assessPlan } from '../domain/test-assessment.js';
@@ -49,7 +50,7 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(new Error('Task time budget exceeded.')), config.taskTimeoutSeconds * 1000);
   const signal = parent ? AbortSignal.any([parent, deadline.signal]) : deadline.signal;
-  agent?.resetBudget?.();
+  if (!input.keepBudget) agent?.resetBudget?.();
   const save = async () => { report.agentUsage = agent?.usage?.(); await store.save(report); };
   const run = async (files: Snapshot, phase: string, attempt = 0): Promise<TestResult> => {
     throwIfAborted(signal);
@@ -66,7 +67,8 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     await save(); throwIfAborted(signal);
     if (input.issue && (input.pr || input.baseSha !== input.headSha || changedPaths(input.base, input.head).length)) throw new Error('Issue reproduction requires one pinned target snapshot.');
     if (input.issue && (!agent || !runner || !config.agent.repair)) throw new Error('Issue reproduction requires an agent, runner and enabled repairs.');
-    const policy = loadPolicy(input.base), paths = input.issue ? [...input.head.keys()] : changedPaths(input.base, input.head);
+    const implementing = !!input.implementation;
+    const policy = loadPolicy(input.base), paths = input.issue || implementing ? [...input.head.keys()] : changedPaths(input.base, input.head);
     Object.assign(report, introducedFindings(input.base, input.head, policy));
     const policyChanged = changedPaths(input.base, input.head).some(path => /(^|\/)AGENTS\.md$/.test(path) || path === '.repopilot/policy.json');
     if (policyChanged) report.notes.push('Policy changes require maintainer review; using base policy.');
@@ -80,10 +82,16 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     Object.assign(report, applyExceptions(report.findings, policy));
     if (runner) { report.tests.base = await run(input.base, 'base'); report.tests.head = await run(input.head, 'head'); }
     let working = input.head, red = report.tests.head, baseline = report.tests.base;
-    const issueBaseline = !input.issue || (passed(red) && preservesTests(baseline, red) && preservesTests(red, baseline));
+    const issueBaseline = !(input.issue || implementing) || (passed(red) && preservesTests(baseline, red) && preservesTests(red, baseline));
     let eligible = passed(baseline) && issueBaseline;
     if (agent && runner && !policyChanged && issueBaseline && passed(baseline) && ['passed', 'failed'].includes(red.status)) {
-      report.plan = validatePlan(await agent.plan(input.base, input.head, description, signal), input.head, description);
+      report.plan = validatePlan(await agent.plan(input.base, input.head, description, signal, input.implementation?.mode), input.head, description);
+      if (input.implementation) {
+        const spec = input.implementation;
+        if (report.plan.tests.some(t => !withinScope(t.path, spec.allowedPaths))
+          || report.plan.scenarios.some(s => s.kind !== (spec.mode === 'feature' ? 'new_behavior' : 'regression') || !s.requirementQuote || !spec.acceptance.includes(s.requirementQuote))
+          || spec.acceptance.some(text => !report.plan!.scenarios.some(s => s.requirementQuote === text))) throw new Error('Implementation tests must cover every acceptance criterion verbatim within the allowed paths.');
+      }
       if (input.issue && report.plan.scenarios.some(s => s.kind !== 'regression' || !s.requirementQuote || s.requirementQuote.trim().length < 8
         || !description.includes(s.requirementQuote))) throw new Error('Issue reproduction requires regression scenarios with exact Issue requirement quotes.');
       working = applyChanges(input.head, report.plan.tests);
@@ -93,9 +101,12 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
         const cases = red.cases.filter(c => c.file === test.path);
         if (!cases.length || cases.some(c => c.status === 'skipped')) throw new Error('Generated tests were not fully executed: ' + test.path);
       }
-      if (input.issue) {
-        eligible = reproduced(report.plan, report.tests.base, baseline, red);
-        report.notes.push(eligible ? 'Issue reproduced by stable generated test failures on the pinned target.' : 'Issue was not reproducibly demonstrated; repair blocked.');
+      if (input.issue || implementing) {
+        const alreadySatisfied = input.implementation?.mode === 'feature' && passed(baseline) && passed(red)
+          && preservesTests(report.tests.base, baseline) && preservesTests(report.tests.head, red)
+          && preservesTests(baseline, red) && preservesTests(red, baseline);
+        eligible = alreadySatisfied || reproduced(report.plan, report.tests.base, baseline, red);
+        report.notes.push(eligible ? 'Requested behavior demonstrated by stable generated test failures on the pinned target.' : 'Missing behavior was not reproducibly demonstrated; repair blocked.');
       } else {
         report.testAssessment = assessPlan(report.plan, report.tests.base, report.tests.head, baseline, red);
         eligible = report.testAssessment.eligible;
@@ -108,6 +119,17 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     const preservedBase = preservesTests(report.tests.base, report.tests.head);
     if (passed(report.tests.head) && !preservedBase) report.notes.push('Head removed or skipped baseline tests; maintainer review required.');
     report.status = !report.findings.length && passed(red) && eligible && preservedBase && !policyChanged ? 'passed' : 'needs_attention';
+    if (implementing && agent && report.status === 'passed' && report.plan) {
+      const checks = applyExceptions(introducedFindings(input.base, working, policy).findings, policy);
+      const reviewed = semanticFindings(await agent.review(input.base, working, description, signal), input.base, working);
+      const semantic = partitionFindings(baselineSemantic, reviewed, input.base, working);
+      if (checks.findings.some(f => f.severity === 'error') || applyExceptions(semantic.findings, policy).findings.some(f => f.severity === 'error')) {
+        report.status = 'needs_attention'; report.notes.push('Acceptance tests pass, but generated changes require policy review.');
+      } else {
+        report.status = 'verified'; report.tests.repaired = red; report.changes = report.plan.tests;
+        report.notes.push('Acceptance criteria already pass; verified new tests without unnecessary production changes.');
+      }
+    }
     if (agent && runner && config.agent.repair && !policyChanged && eligible
       && (regression || (passed(red) && report.findings.some(f => f.severity === 'error')))) {
       if (regression) report.testStability = assessStability(red, await run(working, 'repeat-head'));
@@ -115,13 +137,18 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
         report.notes.push(report.testStability!.reason);
       } else {
         let feedback = '';
+        const attempted = new Set<string>(input.previousPatches);
         for (let attempt = 1; attempt <= config.agent.maxAttempts; attempt++) {
           throwIfAborted(signal); report.attempts = attempt;
           const answer = await agent.repair(input.base, working, JSON.stringify({ description,
-            findings: report.findings, failedTests: red, plan: report.plan, previousAttempt: feedback }), signal);
+            findings: report.findings, failedTests: red, plan: report.plan, previousAttempt: feedback }), signal, input.implementation?.mode);
           const record = { number: attempt, changes: answer.changes, summary: answer.summary, accepted: false, reason: '' };
           report.repairs.push(record);
+          const digest = patchDigest(answer.changes);
+          if (attempted.has(digest)) { record.reason = 'Repeated patch without progress; stopped.'; report.notes.push(record.reason); break; }
+          attempted.add(digest);
           try {
+            if (input.implementation && answer.changes.some(c => !withinScope(c.path, input.implementation!.allowedPaths))) throw new Error('Repair exceeds the goal allowed paths.');
             if (answer.changes.some(c => isTest(c.path))) throw new Error('Repair must preserve frozen tests.');
             const candidate = applyChanges(working, answer.changes);
             if (!changedPaths(working, candidate).length) throw new Error('Repair did not change source.');
@@ -144,7 +171,7 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
           } catch (error) {
             throwIfAborted(signal);
             if (error instanceof RetryableError) throw error;
-            feedback = String(error).slice(0, 10000); record.reason = feedback;
+            feedback = JSON.stringify({ reason: String(error), result: report.tests.repaired, previousChanges: answer.changes }).slice(0, 60000); record.reason = String(error);
             report.notes.push('Attempt ' + attempt + ': ' + feedback);
           }
           await save();

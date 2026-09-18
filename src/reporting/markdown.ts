@@ -7,6 +7,8 @@ function block(value: string): string {
 export function markdownReport(report: Report): string {
   const lines = ['# RepoPilot verification', '', 'Run: ' + report.id, 'Status: ' + report.status,
     'Repository: ' + report.repository, 'Base: ' + report.base, 'Head: ' + report.head,
+    ...(report.goal ? ['Goal: ' + report.goal.id + ' — ' + safe(report.goal.title), 'Target branch: ' + safe(report.goal.branch),
+      ...(report.goal.issue ? ['Issue: #' + report.goal.issue] : [])] : []),
     ...(report.issue ? ['Issue: #' + report.issue.number + '; target branch: ' + safe(report.issue.branch)] : []),
     'Description hash: ' + report.descriptionHash, 'Rerun of: ' + (report.rerunOf ?? '—'), '',
     '## Findings', ...report.findings.map(f => '- ' + safe(f.severity + ' ' + f.path + ':' + f.line + ' [' + f.ruleId + '] ' + f.message)),

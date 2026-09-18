@@ -18,14 +18,16 @@ import { contextBatches } from './context.js';
 export class DockerCodexAgent implements Agent {
   private calls = 0;
   private tokens = 0;
+  private unaccounted = 0;
   constructor(private config: Config['agent'], private dataDir: string,
     private testEnvironment?: ReturnType<typeof describeTestEnvironment>) {}
-  resetBudget() { this.calls = 0; this.tokens = 0; }
-  usage() { return { calls: this.calls, tokens: this.tokens }; }
+  resetBudget() { this.calls = 0; this.tokens = 0; this.unaccounted = 0; }
+  usage() { return { calls: this.calls, tokens: this.tokens, complete: this.unaccounted === 0 }; }
+  design(base: Snapshot, context: string, signal?: AbortSignal) { return this.call('roadmap', base, base, context, signal); }
   review(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, paths?: string[]) { return this.call('review', base, head, description, signal, paths); }
-  plan(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal) { return this.call('plan', base, head, description, signal); }
-  repair(base: Snapshot, head: Snapshot, evidence: string, signal?: AbortSignal) { return this.call('repair', base, head, evidence, signal); }
-  private async call(mode: string, base: Snapshot, head: Snapshot, context: string, signal?: AbortSignal, paths?: string[]): Promise<Answer> {
+  plan(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, intent?: 'feature' | 'bugfix') { return this.call('plan', base, head, description, signal, undefined, intent); }
+  repair(base: Snapshot, head: Snapshot, evidence: string, signal?: AbortSignal, intent?: 'feature' | 'bugfix') { return this.call('repair', base, head, evidence, signal, undefined, intent); }
+  private async call(mode: string, base: Snapshot, head: Snapshot, context: string, signal?: AbortSignal, paths?: string[], intent?: 'feature' | 'bugfix'): Promise<Answer> {
     if (!process.env.OPENAI_API_KEY) throw new Error('Agent container requires OPENAI_API_KEY.');
     const diff = changedPaths(base, head);
     const selected = paths ?? (!diff.length || (mode === 'repair' && diff.every(isTest)) ? [...head.keys()] : undefined);
@@ -35,11 +37,12 @@ export class DockerCodexAgent implements Agent {
       throwIfAborted(signal);
       if (this.calls >= this.config.maxCalls || this.tokens >= this.config.maxTokens) throw new Error('Agent task budget exhausted.');
       this.calls++;
-      const input = JSON.stringify({ mode, model: this.config.model, context, testEnvironment: this.testEnvironment, ...batch });
+      const input = JSON.stringify({ mode, intent, model: this.config.model, context, testEnvironment: this.testEnvironment, ...batch });
       if (Buffer.byteLength(input) > 500000) throw new Error('Evidence/context exceeds per-call budget.');
       const name = 'repopilot-agent-' + randomUUID(), root = resolve(this.dataDir, 'work', name);
       await mkdir(root, { recursive: true }); await writeFile(resolve(root, 'input.json'), input);
       try {
+        this.unaccounted++;
         const result = await execute('docker', ['run', '--rm', '--name', name, '--read-only',
           ...ownerLabels(await resourceOwner(this.dataDir)),
           '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128', '--memory', '2g', '--cpus', '2',
@@ -51,6 +54,7 @@ export class DockerCodexAgent implements Agent {
         if (result.code !== 0) throw new Error('Codex container failed: ' + result.stderr.slice(-2000));
         const envelope = z.object({ answer: answerSchema, tokens: z.number().int().nonnegative() }).parse(JSON.parse(result.stdout));
         this.tokens += envelope.tokens;
+        this.unaccounted--;
         if (this.tokens > this.config.maxTokens) throw new Error('Agent task token budget exceeded; further calls blocked.');
         for (const change of envelope.answer.changes) {
           if (mode === 'repair' && head.has(change.path) && !batch.diff.some(f => f.path === change.path) && !batch.files.some(f => f.path === change.path)) {
@@ -61,6 +65,10 @@ export class DockerCodexAgent implements Agent {
           if (!previous) combined.changes.push(change);
         }
         combined.findings.push(...envelope.answer.findings); combined.scenarios.push(...envelope.answer.scenarios);
+        if (envelope.answer.steps?.length) {
+          if (combined.steps && JSON.stringify(combined.steps) !== JSON.stringify(envelope.answer.steps)) throw new Error('Conflicting task plans across context batches.');
+          combined.steps = envelope.answer.steps;
+        }
         combined.summary += envelope.answer.summary + '\n';
       } finally { await execute('docker', ['rm', '-f', name], { timeoutMs: 10000 }).catch(() => undefined); }
     }

@@ -1,8 +1,13 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 89 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 136 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
 
 Coverage includes:
+
+- Goal acceptance coverage and dependency plans, bounded feature implementation, completed-step checkpoints, cross-round duplicate patches, replanning limits keyed by acceptance ID, persistent pause and publication recovery.
+- Goal model/time accounting, unknown usage reservations, known over-budget consumption, same-commit experience isolation and candidate/baseline preview health gates.
+- Authorized Issue intake, conservative PR base integration, trusted reviewer/CI feedback, frozen tests, non-force updates, full-tree interrupted-publication reconciliation and deduplicated improvement proposals.
+- Goal CLI inspection/pause under the controller lock, polling cancellation and validation of command/configuration boundaries.
 
 - Issue reproduction/repair, requirement quotes, unstable failures, Issue/target freshness, draft PR targeting/linking, replay identity and publish opt-in.
 - pytest/JUnit XML and Go JSON parsing, source mapping, malformed/contradictory reports, missing events, entity rejection and generated Python/Go/Java tests.

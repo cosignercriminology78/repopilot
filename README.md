@@ -75,6 +75,8 @@ For an Issue, run `fix --issue 123 --config config.local.json`: establish a pass
 
 ## Implemented
 
+The development source now adds [goal-driven iteration](docs/ITERATION.md): explicit acceptance criteria and path scopes, resumable step plans, feature implementation, bounded verification feedback, opt-in Issue queues, PR follow-up, version-scoped experience, evidence-based improvement proposals and isolated preview/rollback health checks. These additions are **not included in the published 1.1.0 packages**. Build the controller and Agent from the same checkout. Maintainers retain task selection, merge and deployment decisions.
+
 Version **1.1.0** includes [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters, and [owned-resource crash recovery](docs/RECOVERY.md). Use the matching 1.1.0 controller and Agent image.
 
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.

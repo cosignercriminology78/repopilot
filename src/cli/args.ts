@@ -5,7 +5,8 @@ export function parseCli(args: string[]) {
     config: { type: 'string' }, repo: { type: 'string' }, base: { type: 'string' }, head: { type: 'string' },
     once: { type: 'boolean' }, help: { type: 'boolean' }, version: { type: 'boolean' }, format: { type: 'string' },
     status: { type: 'string' }, limit: { type: 'string' }, offset: { type: 'string' },
-    apply: { type: 'boolean' }, expected: { type: 'string' }, issue: { type: 'string' }, branch: { type: 'string' }
+    apply: { type: 'boolean' }, expected: { type: 'string' }, issue: { type: 'string' }, branch: { type: 'string' },
+    spec: { type: 'string' }
   } });
 }
 export type CliValues = ReturnType<typeof parseCli>['values'];
@@ -17,6 +18,12 @@ export const help = `RepoPilot ${VERSION} — local-first repository verificatio
   repopilot fix --issue 123 --config config.local.json [--branch main]
   repopilot recover --config config.local.json
   repopilot recover --config config.local.json --apply --expected PREVIEW_TOKEN
+  repopilot goals plan --spec goal.json --config config.local.json
+  repopilot goals run|replan|maintain GOAL_ID --config config.local.json
+  repopilot goals list|show|pause [GOAL_ID] --config config.local.json
+  repopilot iterate --config config.local.json [--once]
+  repopilot discover --config config.local.json [--apply --expected PREVIEW_TOKEN]
+  repopilot experiences --config config.local.json
 
   npm run dev -- check --config config.local.json --repo /path/to/repo --base main --head feature
   npm run dev -- watch --config config.local.json [--once]
