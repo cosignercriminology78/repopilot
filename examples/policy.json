@@ -1,0 +1,20 @@
+{
+  "rules": [
+    {
+      "id": "no-physical-foreign-key",
+      "scope": "migrations",
+      "extensions": [".sql"],
+      "forbiddenText": "FOREIGN KEY",
+      "caseInsensitive": true,
+      "message": "Business table relationships are maintained by the service; do not create physical foreign keys.",
+      "severity": "error"
+    },
+    {
+      "id": "no-disabled-tests",
+      "extensions": [".ts", ".js", ".mjs"],
+      "forbiddenText": "test.skip(",
+      "message": "Do not disable regression tests.",
+      "severity": "error"
+    }
+  ]
+}
