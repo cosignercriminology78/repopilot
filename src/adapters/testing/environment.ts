@@ -1,6 +1,7 @@
 import type { TestService } from '../../domain/runner-config.js';
 import { pause, RetryableError, throwIfAborted } from '../../shared/control.js';
 import { execute } from '../../shared/process.js';
+import { ownerLabels } from '../../shared/resource-owner.js';
 export type DockerExecute = typeof execute;
 export class DependencyStoppedError extends Error {}
 
@@ -8,16 +9,17 @@ export class DockerEnvironment {
   private network?: string;
   private containers: string[] = [];
   constructor(private run: DockerExecute) {}
-  async start(prefix: string, services: TestService[], signal: AbortSignal): Promise<string> {
+  async start(prefix: string, services: TestService[], signal: AbortSignal, owner: string): Promise<string> {
     if (!services.length) return 'none';
     this.network = prefix + '-network';
-    await this.checked(['network', 'create', '--internal', '--label', 'repopilot.run=' + prefix, this.network], signal);
+    await this.checked(['network', 'create', '--internal', ...ownerLabels(owner), '--label', 'repopilot.run=' + prefix, this.network], signal);
     for (const service of services) {
       throwIfAborted(signal);
       const name = prefix + '-service-' + service.name;
       const [uid, gid] = service.user.split(':');
       this.containers.push(name);
       await this.checked(['run', '--detach', '--pull=never', '--name', name, '--network', this.network,
+        ...ownerLabels(owner),
         '--network-alias', service.name, '--label', 'repopilot.run=' + prefix,
         '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128',
         '--user', service.user, '--memory', service.memory, '--cpus', String(service.cpus),

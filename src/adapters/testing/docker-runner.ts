@@ -7,6 +7,7 @@ import type { Snapshot, TestResult } from '../../domain/types.js';
 import type { Runner } from '../../ports/runner.js';
 import { RetryableError, throwIfAborted } from '../../shared/control.js';
 import { execute } from '../../shared/process.js';
+import { ownerLabels, resourceOwner } from '../../shared/resource-owner.js';
 import { writeSnapshot } from '../storage/git.js';
 import { DependencyStoppedError, DockerEnvironment, type DockerExecute } from './environment.js';
 import { classifyTestResult } from './test-results.js';
@@ -50,12 +51,14 @@ export class DockerRunner implements Runner {
       if (steps.some(step => step.reporter === 'node')) {
         await copyFile(fileURLToPath(this.options.reporterSource ?? nodeReporterUrl()), resolve(support, 'node-reporter.mjs'));
       }
-      const network = await environment.start(prefix, this.config.services ?? [], signal);
+      const owner = await resourceOwner(this.dataDir);
+      const network = await environment.start(prefix, this.config.services ?? [], signal, owner);
       for (const step of steps) {
         signal.throwIfAborted();
         const name = prefix + '-command-' + step.name, commandStart = Date.now();
         containers.push(name);
         const execution = await this.runProcess('docker', ['run', '--rm', '--pull=never', '--name', name,
+          ...ownerLabels(owner),
           '--network', network, '--read-only', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
           '--pids-limit', '128', '--memory', this.config.memory, '--cpus', String(this.config.cpus),
           '--user', '65534:65534', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m,mode=1777',

@@ -1,8 +1,10 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 70 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 77 offline regression tests and compilation. Release builds also check native portable launchers and version consistency on each target platform.
 
 Coverage includes:
+
+- Controller ownership, stale/unknown/foreign locks, concurrent acquisition, recovery preview invalidation, exact Docker ownership rechecks, partial failures and interrupted-evidence retention.
 
 - Failure categorization, bounded phase retries, cancellation, retained attempt evidence, unstable versus inconclusive repetition, and stopping source repair after environment failures.
 

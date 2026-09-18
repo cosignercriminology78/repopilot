@@ -145,6 +145,8 @@ Publication rechecks SHAs and description. Existing branches/PRs are reusable on
 
 ## Operations and limits
 
+Development builds after 1.0.0 include `recover` to preview and explicitly clean owned crash leftovers and retain interrupted task evidence. See [recovery](docs/RECOVERY.md) for lock states, preview tokens and legacy-resource handling.
+
 Task management commands:
 
 ```sh

@@ -85,6 +85,8 @@ test('dependency runs use fresh internal networks, separate names and reverse cl
   const launches = calls.filter(c => c.args[0] === 'run');
   assert.equal(new Set(launches.map(c => c.args[c.args.indexOf('--name') + 1])).size, 4);
   assert.ok(launches.every(c => c.args.includes('--read-only') && !c.args.includes('-p')));
+  assert.ok(launches.every(c => c.args.includes('io.repopilot.managed=true') && c.args.some(arg => /^io\.repopilot\.owner=[a-f0-9]{64}$/.test(arg))));
+  assert.ok(networks.every(c => c.args.includes('io.repopilot.managed=true')));
   assert.ok(launches.filter(c => c.args.includes('--detach')).every(c => c.args.some(arg => arg.includes('uid=65534,gid=65534'))));
   const cleanup = calls.filter(c => c.args[0] === 'rm' || c.args[1] === 'rm');
   assert.match(cleanup[0]!.args.at(-1)!, /-command-default$/);

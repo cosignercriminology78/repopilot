@@ -10,6 +10,6 @@ This is a developer preview. Run it on a dedicated development machine/VM, not a
 - Snapshots: fail closed for symlinks, submodules, unsupported binaries, case collisions and path traversal. Git executable modes are retained in snapshots, exports and published trees; Windows host filesystem semantics may differ from Linux modes.
 - Evidence: structured reporters check discovery, per-case identities and repeated failure fingerprints. Test code still runs in the same container as its runtime/reporter; this is not tamper-proof attestation against actively malicious code.
 - Local task reports and input snapshots may contain proprietary code and logs. Keep the data directory private and out of Git. Logs are not comprehensively secret-redacted in this preview.
-- Agent timeouts remove the named container. Controller crashes may leave containers; inspect `docker ps -a` for `repopilot-` names before cleanup. Do not delete unrelated containers or the entire data directory blindly.
+- Agent timeouts remove the named container. Controller crashes may leave resources; development builds after 1.0.0 provide explicit [recovery](docs/RECOVERY.md) with data-directory ownership labels, lock checks and preview validation. Names alone never authorize deletion; legacy resources require manual inspection. Do not delete unrelated containers or the entire data directory blindly.
 
 Report vulnerabilities privately to the repository maintainer through an available private contact channel. Do not include secrets in public issues.

@@ -3,6 +3,9 @@ import { GitHub } from '../adapters/github/client.js';
 import { Store } from '../adapters/storage/file-store.js';
 import { gitRepository } from '../adapters/storage/repository.js';
 import { DockerRunner } from '../adapters/testing/docker-runner.js';
+import { DockerRecoveryResources } from '../adapters/testing/recovery-resources.js';
+import { ControllerLock } from '../adapters/storage/controller-lock.js';
+import { applyRecovery, recoveryPreview } from '../application/recovery.js';
 import { describeTestEnvironment } from '../domain/runner-config.js';
 import { VERSION } from '../shared/version.js';
 import { help, parseCli } from './args.js';
@@ -21,8 +24,17 @@ export async function main(args: string[], output: Output = standardOutput): Pro
   if (values.help || !command) { output.write(help); return 0; }
   if (command === 'init') return initialize(values, output);
   if (command === 'doctor') return doctor(values, output);
-  if (!values.config || !['check', 'watch', 'tasks'].includes(command)) throw new Error('Use check, watch or tasks with --config.');
+  if (!values.config || !['check', 'watch', 'tasks', 'recover'].includes(command)) throw new Error('Use check, watch, tasks or recover with --config.');
   const config = await loadConfig(values.config), store = new Store(config.dataDir);
+  if (command === 'recover') {
+    const lock = new ControllerLock(config.dataDir), resources = new DockerRecoveryResources(config.dataDir);
+    if (values.apply && !values.expected) throw new Error('Apply requires --expected PREVIEW_TOKEN from recover.');
+    if (values.apply) {
+      const result = await applyRecovery(config.repository, values.expected!, store, lock, resources);
+      output.write(JSON.stringify(result, null, 2)); return result.errors.length ? 1 : 0;
+    }
+    output.write(JSON.stringify(await recoveryPreview(config.repository, store, lock, resources), null, 2)); return 0;
+  }
   const action = positionals[1], task = positionals[2];
   if (command === 'tasks' && await inspectTasks(action, task, values, config, store, output)) return 0;
   const release = await store.acquire();

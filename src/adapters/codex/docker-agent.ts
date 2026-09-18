@@ -10,6 +10,7 @@ import type { Snapshot } from '../../domain/types.js';
 import type { Agent } from '../../ports/agent.js';
 import { RetryableError, throwIfAborted } from '../../shared/control.js';
 import { execute } from '../../shared/process.js';
+import { ownerLabels, resourceOwner } from '../../shared/resource-owner.js';
 import { contextBatches } from './context.js';
 
 export class DockerCodexAgent implements Agent {
@@ -36,6 +37,7 @@ export class DockerCodexAgent implements Agent {
       await mkdir(root, { recursive: true }); await writeFile(resolve(root, 'input.json'), input);
       try {
         const result = await execute('docker', ['run', '--rm', '--name', name, '--read-only',
+          ...ownerLabels(await resourceOwner(this.dataDir)),
           '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128', '--memory', '2g', '--cpus', '2',
           '--user', '65534:65534', '--tmpfs', '/tmp:rw,nosuid,nodev,size=256m,mode=1777',
           '--mount', `type=bind,source=${root},target=/input,readonly`,

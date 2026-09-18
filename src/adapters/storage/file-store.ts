@@ -4,16 +4,12 @@ import { join } from 'node:path';
 import type { Report } from '../../domain/types.js';
 import type { Store as TaskStore } from '../../ports/store.js';
 import { markdownReport } from '../../reporting/markdown.js';
+import { ControllerLock } from './controller-lock.js';
 
 export class Store implements TaskStore {
   constructor(readonly root: string) {}
   async acquire(): Promise<() => Promise<void>> {
-    await mkdir(this.root, { recursive: true });
-    const path = join(this.root, 'controller.lock');
-    const lock = await open(path, 'wx').catch(() => { throw new Error(`Controller lock exists: ${path}. Stop the other controller; after a crash, verify it stopped before removing this lock.`); });
-    await lock.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
-    await lock.close();
-    return () => unlink(path);
+    return new ControllerLock(this.root).acquire();
   }
   async read(id: string): Promise<Report | undefined> {
     if (!/^[a-f0-9]{24}$/.test(id)) throw new Error('Invalid task ID.');

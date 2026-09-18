@@ -140,6 +140,8 @@ maxCalls 限制每次任务执行的模型调用数量。maxTokens 根据每次�
 
 ## 任务管理 CLI
 
+1.0.0 之后的开发版新增 `recover`：先预览，再校验预览令牌清理当前数据目录所属的遗留资源，并保留中断任务证据。已发布的 1.0.0 下载包不含此命令。参见[崩溃恢复说明](docs/RECOVERY.md)。
+
 ```powershell
 npm run dev -- tasks list --config config.local.json --status running --limit 20 --offset 0
 npm run dev -- tasks show 任务ID --config config.local.json --format markdown
