@@ -6,6 +6,14 @@
 
 RepoPilot turns GitHub Issues and pull requests into a bounded cycle of test generation, failure reproduction, code repair and independent verification. It uses Codex to review repository rules, generate requirement-driven tests, and propose fixes. A separate Docker runner checks the code before the controller can publish a repair branch and draft PR. Maintainers retain the merge decision.
 
+## Why RepoPilot?
+
+We believe software development is approaching an era in which AI takes a growing role in automated iteration and updates. Agents will carry more work from understanding a problem and adding tests through changing code, checking results and proposing further improvements. Developers can devote more attention to product direction, architectural tradeoffs and quality standards while agents work within explicit goals and constraints.
+
+That future needs a trustworthy engineering process: changes have a clear rationale, failures can be reproduced, fixes are independently verified, unsuccessful work can stop, and decisions remain traceable. People retain control over critical decisions. These foundations become more important as automation takes on more responsibility.
+
+RepoPilot is a step toward that future. Starting from GitHub Issues and PRs, it connects Codex's code understanding and repair capabilities with tests, repository rules and human review to explore verifiable, controlled iteration. The current release focuses on maintainer-selected problems and bounded repair attempts. Broader autonomous iteration is a project vision; unattended product development, merging and deployment are not current capabilities.
+
 ## What problem does it solve?
 
 A passing existing test suite may miss a new requirement or an untested edge case. Maintainers also need to check repository-specific conventions, reproduce reported failures, and confirm that a proposed fix preserves existing behavior. RepoPilot brings these steps into one repeatable workflow.
