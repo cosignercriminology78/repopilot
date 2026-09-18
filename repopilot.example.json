@@ -1,0 +1,20 @@
+{
+  "repository": "OWNER/REPOSITORY",
+  "dataDir": ".repopilot-data",
+  "pollSeconds": 60,
+  "runner": {
+    "image": "node:22-bookworm-slim",
+    "command": ["node", "--test"],
+    "timeoutSeconds": 300,
+    "memory": "1g",
+    "cpus": 2
+  },
+  "agent": {
+    "enabled": false,
+    "repair": false,
+    "image": "repopilot-agent:local",
+    "timeoutSeconds": 300,
+    "maxAttempts": 2
+  },
+  "publish": false
+}
