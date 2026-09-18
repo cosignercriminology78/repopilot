@@ -34,7 +34,7 @@ A passing existing test suite may miss a new requirement or an untested edge cas
 - **QA and developer-tooling engineers** who maintain JavaScript, Python, Go or Java suites, monorepos and test environments with database or Redis dependencies.
 - **Developers building with Codex** who want an inspectable example of SDK orchestration, structured model output, independent verification and bounded repair.
 
-These are intended users, not claims of existing adoption. The current scope is public, text-based repositories; version 1.1.0 supports Node, Vitest, pytest, Go and compatible JUnit XML evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
+These are intended users, not claims of existing adoption. The current scope is public, text-based repositories; version 1.3.0 supports Node, Vitest, pytest, Go and compatible JUnit XML evidence. Fork PR execution, browser E2E and a hosted dashboard are outside the current implementation.
 
 ## How it uses OpenAI Codex
 
@@ -75,9 +75,9 @@ For an Issue, run `fix --issue 123 --config config.local.json`: establish a pass
 
 ## Implemented
 
-The development source now adds [goal-driven iteration](docs/ITERATION.md): explicit acceptance criteria and path scopes, resumable step plans, feature implementation, bounded verification feedback, opt-in Issue queues, PR follow-up, version-scoped experience, evidence-based improvement proposals and isolated preview/rollback health checks. These additions are **not included in the published 1.1.0 packages**. Build the controller and Agent from the same checkout. Maintainers retain task selection, merge and deployment decisions.
+Version **1.3.0** brings [goal-driven iteration](docs/ITERATION.md): explicit acceptance criteria and path scopes, resumable step plans, feature implementation, bounded verification feedback, opt-in Issue queues, PR follow-up, version-scoped experience, evidence-based improvement proposals and isolated preview/rollback health checks. These capabilities are included in the portable packages and matching 1.3.0 Agent image. Maintainers retain task selection, merge and deployment decisions.
 
-Version **1.1.0** includes [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters, and [owned-resource crash recovery](docs/RECOVERY.md). Use the matching 1.1.0 controller and Agent image.
+Version **1.3.0** includes [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters, and [owned-resource crash recovery](docs/RECOVERY.md). Use the matching 1.3.0 controller and Agent image.
 
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
 - Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.
@@ -94,7 +94,7 @@ Developer preview. See [verification coverage](docs/VERIFICATION.md) for the cur
 
 ## Setup
 
-Download a [1.1.0 portable release](https://github.com/indada/repopilot/releases/tag/v1.1.0) for Linux, Windows or macOS to run without installing Node.js. See [portable quickstart](docs/QUICKSTART.md). The following commands are for source installations.
+Download a [1.3.0 portable release](https://github.com/indada/repopilot/releases/tag/v1.3.0) for Linux, Windows or macOS to run without installing Node.js. See [portable quickstart](docs/QUICKSTART.md). The following commands are for source installations.
 
 Node.js 22 recommended, npm and Git. Test and agent execution requires Docker with Linux containers.
 
@@ -164,7 +164,7 @@ Publication rechecks SHAs and description. Existing branches/PRs are reusable on
 
 ## Operations and limits
 
-Version 1.1.0 includes `recover` to preview and explicitly clean owned crash leftovers and retain interrupted task evidence. See [recovery](docs/RECOVERY.md) for lock states, preview tokens and legacy-resource handling.
+Version 1.3.0 includes `recover` to preview and explicitly clean owned crash leftovers and retain interrupted task evidence. See [recovery](docs/RECOVERY.md) for lock states, preview tokens and legacy-resource handling.
 
 Task management commands:
 

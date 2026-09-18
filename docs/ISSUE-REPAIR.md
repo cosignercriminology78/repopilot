@@ -1,6 +1,6 @@
 # Issue reproduction and repair
 
-Available in 1.1.0 through `fix --issue`. Use the matching 1.1.0 Agent image.
+Available since 1.1.0 through `fix --issue`. For the current release, use the matching 1.3.0 controller and Agent image.
 
 ```sh
 npm run dev -- fix --issue 123 --config config.local.json

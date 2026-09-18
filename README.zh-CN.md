@@ -34,7 +34,7 @@ RepoPilot 是朝这个方向迈出的一步。我们从 GitHub Issue 和 PR 出�
 - **测试与研发效能工程师**：维护 JavaScript、Python、Go 或 Java 测试、Monorepo，以及依赖数据库或 Redis 的测试环境。
 - **基于 Codex 开发工具的开发者**：希望参考 SDK 编排、结构化模型输出、独立验证和有限轮次修复的开源实现。
 
-以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库；1.1.0 支持 Node、Vitest、pytest、Go 和兼容的 JUnit XML 测试证据。暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
+以上是目标用户与适用场景，不代表已经存在对应客户或使用规模。当前支持公开、文本型仓库；1.3.0 支持 Node、Vitest、pytest、Go 和兼容的 JUnit XML 测试证据。暂不执行 fork PR，不提供浏览器 E2E 或托管控制台。
 
 ## 与 Codex、OpenAI 的直接关系
 
@@ -79,7 +79,7 @@ flowchart LR
 
 ## 已实现的代码功能
 
-开发中的源码现已增加[目标驱动迭代](docs/ITERATION.md)：明确验收条件与修改范围、可恢复的分步计划、新功能实现、有限轮次验证反馈、按授权条件领取 Issue、跟进 PR、按版本使用历史经验、根据证据提出改进建议，以及隔离环境内的预发布健康检查与回滚演练。**这些新增能力尚未包含在已发布的 1.1.0 下载包中**，需要从同一份源码构建控制器和 Agent。任务选择、合并及生产上线仍由维护者掌握。
+**1.3.0 已包含[目标驱动迭代](docs/ITERATION.md)**：明确验收条件与修改范围、可恢复的分步计划、新功能实现、有限轮次验证反馈、按授权条件领取 Issue、跟进 PR、按版本使用历史经验、根据证据提出改进建议，以及隔离环境内的预发布健康检查与回滚演练。这些能力可直接通过便携包与配套的 1.3.0 Agent 镜像使用。任务选择、合并及生产上线仍由维护者掌握。
 
 ```sh
 npm run dev -- goals plan --spec examples/goal.json --config config.local.json
@@ -89,7 +89,7 @@ npm run dev -- goals maintain GOAL_ID --config config.local.json
 
 目标文件定义“要完成什么”和“如何验收”，控制器将目标拆分为有依赖关系的步骤，每步先冻结测试，再实现和验证。遇到证据不足、输入变化或预算耗尽时停止；中断后可检查记录并恢复。队列、PR 跟进与预发布检查均需显式配置，不会因升级自动开启。预发布与回滚演练仅运行隔离 Docker 快照，不操作生产服务或真实流量。完整配置、命令及边界见[使用说明](docs/ITERATION.md)。
 
-**1.1.0** 已包含 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)、[pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md) 和[崩溃恢复](docs/RECOVERY.md)。下载包与 Agent 镜像应使用匹配的 1.1.0 版本。
+**1.3.0** 已包含 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)、[pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md) 和[崩溃恢复](docs/RECOVERY.md)。下载包与 Agent 镜像应使用匹配的 1.3.0 版本。
 
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。
 - 从 base 读取规则，支持嵌套 AGENTS.md、静态文本规则、JS/TS AST 调用规则、规则冲突检查、历史问题去重及带有效期的规则豁免。
@@ -107,7 +107,7 @@ npm run dev -- goals maintain GOAL_ID --config config.local.json
 
 ## 启动
 
-直接使用可下载 [1.1.0 便携包](https://github.com/indada/repopilot/releases/tag/v1.1.0)，支持 Linux、Windows、macOS，内置 Node.js，无需 npm 安装。参见[便携版快速入门](docs/QUICKSTART.md)。以下为源码安装方式。
+直接使用可下载 [1.3.0 便携包](https://github.com/indada/repopilot/releases/tag/v1.3.0)，支持 Linux、Windows、macOS，内置 Node.js，无需 npm 安装。参见[便携版快速入门](docs/QUICKSTART.md)。以下为源码安装方式。
 
 需要 Node.js 22、Git，以及用于执行目标测试和 Agent 的 Linux Docker 容器。
 
@@ -167,7 +167,7 @@ maxCalls 限制每次任务执行的模型调用数量。maxTokens 根据每次�
 
 ## 任务管理 CLI
 
-1.1.0 提供 `recover`：先预览，再校验预览令牌清理当前数据目录所属的遗留资源，并保留中断任务证据。参见[崩溃恢复说明](docs/RECOVERY.md)。
+1.3.0 提供 `recover`：先预览，再校验预览令牌清理当前数据目录所属的遗留资源，并保留中断任务证据。参见[崩溃恢复说明](docs/RECOVERY.md)。
 
 ```powershell
 npm run dev -- tasks list --config config.local.json --status running --limit 20 --offset 0
