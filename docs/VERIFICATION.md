@@ -1,8 +1,10 @@
 # Verification
 
-This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 63 offline regression tests and compilation.
+This revision is validated locally on Windows / Node.js 21.1.0 with strict TypeScript checking (including tests), 69 offline regression tests and compilation.
 
 Coverage includes:
+
+- Failure categorization, bounded phase retries, cancellation, retained attempt evidence, unstable versus inconclusive repetition, and stopping source repair after environment failures.
 
 - Mock Docker multi-command aggregation, working directories, stable legacy identities, service readiness/budgets, isolated resource naming, partial startup failure, cancellation and cleanup failure gates.
 

@@ -17,11 +17,13 @@ export function markdownReport(report: Report): string {
     '', '## Test assessment',
     ...(report.testAssessment?.cases.map(c => '- ' + safe(c.outcome + ' ' + c.id + ': ' + c.reason)) ?? []),
     ...(report.testAssessment?.reasons.map(reason => '- ' + safe(reason)) ?? []),
+    '', '## Test stability', safe(report.testStability ? report.testStability.status + ': ' + report.testStability.reason : 'Not assessed.'),
     '', '## Runner evidence'];
   for (const item of report.evidence) {
-    lines.push('', '### ' + safe(item.phase) + ' / attempt ' + item.attempt,
+    lines.push('', '### ' + safe(item.phase) + ' / attempt ' + item.attempt + ' / execution ' + (item.execution ?? 1),
       'Status: ' + item.result.status + '; duration: ' + item.result.durationMs + ' ms',
       ...(item.result.reason ? ['Reason: ' + safe(item.result.reason)] : []),
+      ...(item.result.failure ? ['Failure category: ' + item.result.failure.kind + '; retryable: ' + item.result.failure.retryable] : []),
       ...(item.result.commands ?? []).map(c => '- ' + safe('Command ' + c.name + ' (' + (c.cwd || '.') + '): ' + c.status + (c.reason ? ' — ' + c.reason : ''))),
       ...item.result.cases.map(c => '- ' + safe(c.status + ' ' + c.file + ' :: ' + c.name + (c.fingerprint ? ' [' + c.fingerprint + ']' : ''))),
       block(item.result.output.slice(0, 4000)));

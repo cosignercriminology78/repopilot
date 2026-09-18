@@ -5,12 +5,13 @@ import { applyChanges, isTest, semanticFindings, validatePlan } from '../domain/
 import { changedPaths } from '../domain/snapshot.js';
 import type { RunInput } from '../domain/task.js';
 import { assessPlan } from '../domain/test-assessment.js';
-import { notRun, passed, preservesTests, sameFailures } from '../domain/test-evidence.js';
+import { notRun, passed, preservesTests } from '../domain/test-evidence.js';
+import { assessStability, diagnose } from '../domain/test-diagnosis.js';
 import type { Report, Snapshot, TestResult } from '../domain/types.js';
 import { type Agent } from '../ports/agent.js';
 import { type Runner } from '../ports/runner.js';
 import { type Store } from '../ports/store.js';
-import { RetryableError, StaleTaskError, throwIfAborted } from '../shared/control.js';
+import { pause, RetryableError, StaleTaskError, throwIfAborted } from '../shared/control.js';
 import { TaskCancelledError, withTaskCancellation } from './task-control.js';
 
 export async function runPipeline(input: RunInput, config: Config, store: Store, runner?: Runner, agent?: Agent, parent?: AbortSignal): Promise<Report> {
@@ -50,9 +51,14 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
   const save = async () => { report.agentUsage = agent?.usage?.(); await store.save(report); };
   const run = async (files: Snapshot, phase: string, attempt = 0): Promise<TestResult> => {
     throwIfAborted(signal);
-    const result = await runner!.run(files, phase, signal);
-    throwIfAborted(signal);
-    report.evidence.push({ phase, attempt, result }); await save(); return result;
+    const limit = config.runner?.environmentAttempts ?? 2;
+    for (let execution = 1; ; execution++) {
+      const result = diagnose(await runner!.run(files, phase, signal));
+      throwIfAborted(signal);
+      report.evidence.push({ phase, attempt, execution, result }); await save();
+      if (result.status !== 'error' || result.failure?.kind !== 'environment' || !result.failure.retryable || execution >= limit) return result;
+      await pause(Math.min(config.retry.maxDelayMs, config.retry.baseDelayMs * 2 ** (execution - 1)), signal);
+    }
   };
   try {
     await save(); throwIfAborted(signal);
@@ -92,8 +98,9 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     report.status = !report.findings.length && passed(red) && eligible && preservedBase && !policyChanged ? 'passed' : 'needs_attention';
     if (agent && runner && config.agent.repair && !policyChanged && eligible
       && (regression || (passed(red) && report.findings.some(f => f.severity === 'error')))) {
-      if (regression && !sameFailures(red, await run(working, 'repeat-head'))) {
-        report.notes.push('Failure identities or fingerprints changed on repetition; repair blocked.');
+      if (regression) report.testStability = assessStability(red, await run(working, 'repeat-head'));
+      if (regression && report.testStability?.status !== 'stable') {
+        report.notes.push(report.testStability!.reason);
       } else {
         let feedback = '';
         for (let attempt = 1; attempt <= config.agent.maxAttempts; attempt++) {
@@ -109,6 +116,10 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
             const checks = applyExceptions(introducedFindings(input.base, candidate, policy).findings, policy);
             if (checks.findings.some(f => f.severity === 'error')) throw new Error('Repair still violates static policy.');
             report.tests.repaired = await run(candidate, 'repair', attempt);
+            if (report.tests.repaired.status === 'error' || report.tests.repaired.status === 'not_run') {
+              record.reason = 'Repair verification is inconclusive; no further source changes requested.';
+              report.notes.push(record.reason); break;
+            }
             if (!passed(report.tests.repaired) || !preservesTests(red, report.tests.repaired)
               || !preservesTests(report.tests.head, report.tests.repaired)
               || !preservesTests(report.tests.base, report.tests.repaired)) throw new Error('Repair did not pass the same test identities.');

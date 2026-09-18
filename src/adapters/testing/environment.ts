@@ -2,6 +2,7 @@ import type { TestService } from '../../domain/runner-config.js';
 import { pause, RetryableError, throwIfAborted } from '../../shared/control.js';
 import { execute } from '../../shared/process.js';
 export type DockerExecute = typeof execute;
+export class DependencyStoppedError extends Error {}
 
 export class DockerEnvironment {
   private network?: string;
@@ -38,7 +39,7 @@ export class DockerEnvironment {
   async assertRunning(signal: AbortSignal): Promise<void> {
     for (const name of this.containers) {
       const state = await this.run('docker', ['inspect', '--format', '{{.State.Running}}', name], { signal, timeoutMs: 10000 });
-      if (state.code !== 0 || state.timedOut || state.stdout.trim() !== 'true') throw new Error('Dependency service stopped: ' + name);
+      if (state.code !== 0 || state.timedOut || state.stdout.trim() !== 'true') throw new DependencyStoppedError('Dependency service stopped: ' + name);
     }
   }
   private async checked(args: string[], signal: AbortSignal): Promise<void> {

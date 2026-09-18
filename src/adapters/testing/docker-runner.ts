@@ -8,7 +8,7 @@ import type { Runner } from '../../ports/runner.js';
 import { RetryableError, throwIfAborted } from '../../shared/control.js';
 import { execute } from '../../shared/process.js';
 import { writeSnapshot } from '../storage/git.js';
-import { DockerEnvironment, type DockerExecute } from './environment.js';
+import { DependencyStoppedError, DockerEnvironment, type DockerExecute } from './environment.js';
 import { classifyTestResult } from './test-results.js';
 
 export function runnerCommand(config: Pick<TestCommand, 'command' | 'reporter'>): string[] {
@@ -79,14 +79,17 @@ export class DockerRunner implements Runner {
         : commands.some(c => c.status === 'not_run') ? 'not_run'
         : commands.some(c => c.status === 'failed') ? 'failed' : 'passed';
       result = { status, exitCode: status === 'passed' ? 0 : commands.find(c => c.exitCode !== 0)?.exitCode ?? 1,
+        failure: commands.find(c => c.status === 'error')?.failure,
         output: commands.map(c => '[' + c.name + ']\n' + c.output).join('\n').slice(-100000),
         durationMs: Date.now() - start, cases: commands.flatMap(c => c.cases),
         structured: !incomplete && commands.every(c => c.structured),
         reason: incomplete ? 'Some test commands did not execute.' : commands.map(c => c.reason).filter(Boolean).join('\n') || undefined };
     } catch (error) {
       throwIfAborted(parent);
-      if (error instanceof RetryableError) throw error;
       result = failure(label + ': ' + String(error));
+      const retryable = error instanceof RetryableError || error instanceof DependencyStoppedError || deadline.signal.aborted
+        || (error instanceof Error && error.name === 'TimeoutError');
+      result.failure = { kind: 'environment', retryable };
     } finally {
       clearTimeout(timer);
       for (const name of containers.reverse()) {
@@ -98,7 +101,7 @@ export class DockerRunner implements Runner {
       cleanupErrors.push(...await environment.cleanup());
     }
     throwIfAborted(parent);
-    if (cleanupErrors.length) result = { ...result, status: 'error', reason: cleanupErrors.join('\n') };
+    if (cleanupErrors.length) result = { ...result, status: 'error', failure: { kind: 'environment', retryable: false }, reason: cleanupErrors.join('\n') };
     return { ...result, commands, durationMs: Date.now() - start };
   }
 }

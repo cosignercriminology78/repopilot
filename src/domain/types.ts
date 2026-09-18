@@ -12,6 +12,7 @@ export interface TestCase {
   command?: string;
 }
 export interface TestResult {
+  failure?: { kind: 'environment' | 'test_failure' | 'test_discovery' | 'invalid_report'; retryable: boolean };
   status: 'passed' | 'failed' | 'error' | 'not_run';
   exitCode: number | null; output: string; durationMs: number;
   cases: TestCase[]; structured: boolean; reason?: string;
@@ -28,7 +29,7 @@ export interface TestPlan {
   scenarios: { name: string; requirement: string; testFile: string; kind: 'regression' | 'new_behavior'; requirementQuote?: string }[];
   tests: RepairChange[];
 }
-export interface TestEvidence { phase: string; attempt: number; result: TestResult; }
+export interface TestEvidence { phase: string; attempt: number; result: TestResult; execution?: number; }
 export interface RepairAttempt { number: number; changes: RepairChange[]; summary: string; accepted: boolean; reason?: string; }
 export interface Report {
   schemaVersion: 2; id: string; repository: string; pr?: number; base: string; head: string;
@@ -38,6 +39,7 @@ export interface Report {
   semantic: 'not_run' | 'completed';
   tests: { base: TestResult; head: TestResult; repaired?: TestResult };
   plan?: TestPlan; evidence: TestEvidence[]; repairs: RepairAttempt[];
+  testStability?: { status: 'stable' | 'unstable' | 'inconclusive'; reason: string };
   testAssessment?: { eligible: boolean; reasons: string[]; cases: { id: string; outcome: 'regression' | 'new_behavior_verified' | 'preserved' | 'unresolved'; reason: string }[] };
   changes: RepairChange[]; attempts: number; notes: string[]; createdAt: string;
   executions: number; retryAfter?: string; retryable: boolean;

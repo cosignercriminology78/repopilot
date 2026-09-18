@@ -27,6 +27,7 @@ export const runnerSchema = z.object({
   command: command.optional(), commands: z.array(stepSchema).min(1).max(8).optional(),
   cwd: cwd.optional(), env: env.optional(), services: z.array(serviceSchema).max(4).optional(),
   reporter: reporter.default('node'),
+  environmentAttempts: z.number().int().min(1).max(3).optional(),
   timeoutSeconds: z.number().int().min(1).max(1800).default(300),
   memory: memory.default('1g'), cpus: z.number().positive().max(16).default(2)
 }).strict().superRefine((config, ctx) => {

@@ -12,7 +12,15 @@ Commands execute sequentially, each in a fresh writable copy of the same pinned 
 
 Results retain each command's status, duration, working directory and output. Relative test paths are resolved from its working directory back to the repository root. In multi-command mode, command names form part of case identities, so two steps can run the same file without overwriting evidence. A failed command remains failed even if later steps pass. An empty/unstructured result blocks verification; infrastructure errors stop further steps. Policy-only and command-only runs still cannot publish verified repairs.
 
-## Dependency services
+## Failure classification and retries
+
+Evidence records `failure.kind`: `test_failure` for structured assertions, `environment` for runner/service failures, `test_discovery` for missing execution, and `invalid_report` for unusable evidence. A category describes the observed evidence; it is not proof of the underlying root cause.
+
+`runner.environmentAttempts` limits executions of each verification phase to 1–3 (default 2, including the initial execution). Only explicitly retryable environment errors receive a retry: startup failures, timeouts, killed containers and stopped dependencies. Cleanup failures, malformed reports, command-not-found errors and ordinary assertions do not. Each retry rebuilds the entire phase environment and executes its commands from the original snapshot, retaining all attempts in the report. It does not repeat model review/planning or just rerun a failed command against mutated service state. Delays use the controller retry settings, and task cancellation/time budgets still apply. Set the value to 1 to disable these retries.
+
+Before regression repair, repeated evidence must have matching discovered/executed identities and matching failure fingerprints. A disappearing or changing failure is `unstable`; missing cases or environmental failures are `inconclusive`. Both block repair. If candidate verification exhausts environmental retries or lacks test evidence, the controller stops asking for source patches. JSON and Markdown reports include phase execution numbers, categories and stability assessments. Existing reports without these optional fields remain readable.
+
+## Dependency services configuration
 
 Configure up to four services with `name`, `image`, optional `command` and `env`, plus a required `readiness.command`. Tests connect using service names as DNS names; no host ports are published. Readiness commands run inside the service container and must exit zero when it can accept connections.
 

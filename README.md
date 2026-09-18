@@ -15,6 +15,7 @@ RepoPilot watches pull requests, checks trusted base-branch rules, generates tes
 - Structured Node and Vitest results: test discovery, stable identities, repeated failure fingerprints and same-case verification.
 - Monorepo working directories, multiple named test commands and disposable dependency services; see [test environments](docs/TEST-ENVIRONMENTS.md).
 - Bounded repair attempts, task retries, publication retries, call/token budgets and process-tree cleanup.
+- Failure categories and bounded phase-level environment retries; unstable failures or changed discovery block automatic repair.
 - Separate autofix branches/draft PRs, executable-mode preservation and collision-safe publication recovery.
 - Atomic JSON reports, Markdown evidence summaries, previous-execution archives and exclusive controller lock.
 

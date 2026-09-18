@@ -97,7 +97,9 @@ test('dependency runs use fresh internal networks, separate names and reverse cl
 test('partial service startup failure cleans resources before retry', async t => {
   const { runner, calls } = await fixture(t, { command, services: [service] }, c => c.args.includes('--detach')
     ? { ...ok(), code: 125 } : defaultResponse(c));
-  await assert.rejects(runner.run(files, 'head'), /dependency setup failed/);
+  const result = await runner.run(files, 'head');
+  assert.equal(result.status, 'error');
+  assert.deepEqual(result.failure, { kind: 'environment', retryable: true });
   assert.ok(calls.some(c => c.args[0] === 'rm')); assert.equal(calls.at(-1)?.args[1], 'rm');
 });
 

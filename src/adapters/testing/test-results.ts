@@ -59,7 +59,7 @@ export function classifyTestResult(result: ProcessResult, adapter: 'node' | 'vit
   durationMs: number, root?: string, cwd?: string): TestResult {
   const common = { exitCode: result.code, output: (result.stdout + result.stderr).slice(-100000), durationMs, cases: [] as TestCase[], structured: false };
   if (result.timedOut || result.code === null || [125, 126, 127, 137].includes(result.code)) {
-    return { ...common, status: 'error', reason: result.timedOut ? 'Test execution timed out.' : 'Runner infrastructure failed.' };
+    return { ...common, status: 'error', failure: { kind: 'environment', retryable: result.timedOut || result.code === 125 || result.code === 137 }, reason: result.timedOut ? 'Test execution timed out.' : 'Runner infrastructure failed.' };
   }
   if (adapter === 'command') return { ...common, status: 'not_run', reason: 'Command-only results cannot verify test cases.' };
   try {
