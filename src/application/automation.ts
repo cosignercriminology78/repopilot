@@ -8,6 +8,7 @@ import { passed, preservesTests } from '../domain/test-evidence.js';
 import type { AutomationGitHub } from '../ports/automation.js';
 import { withFreshness } from '../shared/control.js';
 import { createGoal, loadGoal, runGoal, type IterationDependencies } from './iteration.js';
+import { trackPostMerge } from './post-merge.js';
 import { runPipeline } from './pipeline.js';
 
 export type AutomationDependencies = IterationDependencies & { github: IterationDependencies['github'] & AutomationGitHub };
@@ -56,6 +57,11 @@ export async function discover(d: AutomationDependencies, expected?: string) {
   for (const report of reports.slice(0, 100)) if (!passed(report.tests.base)) proposals.push({
     id: taskId([report.repository, report.base, 'baseline']), title: 'Investigate baseline test failure or missing evidence',
     body: `Maintainer review required before execution.\n\nCommit: ${report.base}\nEvidence report: ${report.id}\n\n${(report.tests.base.reason ?? report.tests.base.output).slice(0, 5000)}` });
+  for (const goal of (await d.goals.list()).filter(goal => goal.repository === d.config.repository && goal.postMerge?.status === 'regressed').slice(0, 100)) proposals.push({
+    id: taskId([goal.repository, goal.id, goal.postMerge!.mergeSha, goal.postMerge!.reasons]),
+    title: `Investigate post-merge regression: ${goal.spec.title}`.slice(0, 200),
+    body: `Maintainer review required before execution.\n\nGoal: ${goal.id}\nMerge commit: ${goal.postMerge!.mergeSha ?? 'unknown'}\nPull request: ${goal.pullRequestUrl}\n\n${goal.postMerge!.reasons.join('\n').slice(0, 5000)}`
+  });
   const unique = [...new Map(proposals.map(p => [p.id, p])).values()].slice(0, 20), token = taskId(unique);
   if (!expected) return { token, proposals: unique, published: [] as string[] };
   if (expected !== token) throw new Error('Discovery preview changed; inspect a fresh preview.');
@@ -68,6 +74,13 @@ export async function discover(d: AutomationDependencies, expected?: string) {
     published.push(await d.github.propose(proposal.title, proposal.body + '\n\n' + marker));
   }
   return { token, proposals: unique, published };
+}
+
+export async function trackGoal(id: string, d: AutomationDependencies) {
+  const policy = d.config.iteration?.postMerge;
+  if (!policy) throw new Error('Post-merge tracking requires iteration.postMerge.');
+  return trackPostMerge(id, { repository: d.config.repository, requiredChecks: policy.requiredChecks,
+    requireIssueClosed: policy.requireIssueClosed, goals: d.goals, github: d.github });
 }
 
 export async function maintainGoal(id: string, d: AutomationDependencies) {

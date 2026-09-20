@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
-import { claimIssues, discover, maintainGoal, type AutomationDependencies } from '../../application/automation.js';
+import { claimIssues, discover, maintainGoal, trackGoal, type AutomationDependencies } from '../../application/automation.js';
+import { evaluateGoals } from '../../application/evaluation.js';
 import { createGoal, runGoal } from '../../application/iteration.js';
 import type { Config } from '../../domain/config.js';
 import type { GoalState } from '../../domain/iteration.js';
@@ -17,13 +18,14 @@ function page(values: CliValues) {
 }
 export function validateGoalCommand(command: string, action: string | undefined, id: string | undefined, values: CliValues) {
   if (command === 'goals') {
-    if (!['plan', 'run', 'replan', 'maintain', 'list', 'show', 'pause'].includes(action ?? '')) throw new Error('Unknown goals action.');
+    if (!['plan', 'run', 'replan', 'maintain', 'track', 'list', 'show', 'pause'].includes(action ?? '')) throw new Error('Unknown goals action.');
     if (action === 'plan' && !values.spec) throw new Error('Planning requires --spec GOAL_JSON.');
     if (!['plan', 'list'].includes(action!) && !id) throw new Error('Goal ID is required.');
     if (id && !/^[a-f0-9]{24}$/.test(id)) throw new Error('Invalid goal ID.');
   }
   if (command === 'discover' && values.apply && !values.expected) throw new Error('Apply requires --expected PREVIEW_TOKEN from discover.');
   if (command === 'discover' && values.expected && !values.apply) throw new Error('--expected requires --apply.');
+  if (command === 'evals' && values.suite && !/^[a-z][a-z0-9-]{0,39}$/.test(values.suite)) throw new Error('Invalid evaluation suite.');
 }
 /** Inspection and pause requests remain available while another controller holds the execution lock. */
 export async function inspectGoals(command: string, action: string | undefined, id: string | undefined, values: CliValues,
@@ -32,6 +34,10 @@ export async function inspectGoals(command: string, action: string | undefined, 
     const { limit, offset } = page(values), entries = (await goals.experiences()).filter(e => e.repository === config.repository)
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
     emit(output, { total: entries.length, offset, experiences: entries.slice(offset, offset + limit) }); return true;
+  }
+  if (command === 'evals') {
+    emit(output, evaluateGoals((await goals.list()).filter(goal => goal.repository === config.repository), values.suite));
+    return true;
   }
   if (command !== 'goals' || !['list', 'show', 'pause'].includes(action ?? '')) return false;
   if (action === 'list') {
@@ -58,8 +64,9 @@ export async function executeGoals(command: string, action: string | undefined, 
       if (deps.signal.aborted) return 0;
       try {
         if (deps.config.iteration?.queue) emit(output, { claimed: await claimIssues(deps) });
-        if (deps.config.iteration?.maintenance) {
-          const candidates = (await deps.goals.list()).filter(s => s.repository === deps.config.repository && s.status === 'published' && !failedMaintenance.has(s.id));
+        if (deps.config.iteration?.maintenance || deps.config.iteration?.postMerge) {
+          const candidates = (await deps.goals.list()).filter(s => s.repository === deps.config.repository && s.status === 'published'
+            && !['healthy', 'regressed', 'closed_unmerged'].includes(s.postMerge?.status ?? '') && !failedMaintenance.has(s.id));
           const limit = deps.config.iteration.queue?.maxPerRun ?? 1;
           const start = candidates.length ? maintenanceOffset % candidates.length : 0;
           const batch = [...candidates.slice(start), ...candidates.slice(0, start)].slice(0, limit);
@@ -67,15 +74,22 @@ export async function executeGoals(command: string, action: string | undefined, 
           for (const state of batch) {
             if (deps.signal.aborted) return 0;
             if (await deps.goals.paused(state.id)) continue;
-            try { emit(output, await maintainGoal(state.id, deps)); }
+            try {
+              let maintain = !!deps.config.iteration?.maintenance;
+              if (deps.config.iteration?.postMerge) {
+                const outcome = await trackGoal(state.id, deps); emit(output, outcome);
+                maintain = maintain && outcome?.status === 'waiting_for_merge';
+              }
+              if (maintain) emit(output, await maintainGoal(state.id, deps));
+            }
             catch (error) {
               if (deps.signal.aborted) return 0;
               failedMaintenance.add(state.id);
-              output.error(`Goal ${state.id} maintenance failed; automatic follow-up stopped for this session: ${String(error)}`);
+              output.error(`Goal ${state.id} follow-up failed; automatic processing stopped for this session: ${String(error)}`);
             }
           }
         }
-        if (!deps.config.iteration?.queue && !deps.config.iteration?.maintenance) throw new Error('iterate requires iteration.queue or iteration.maintenance.');
+        if (!deps.config.iteration?.queue && !deps.config.iteration?.maintenance && !deps.config.iteration?.postMerge) throw new Error('iterate requires iteration.queue or iteration.maintenance, or iteration.postMerge.');
       }
       catch (error) { if (deps.signal.aborted) return 0; throw error; }
       if (values.once) return 0;
@@ -84,6 +98,7 @@ export async function executeGoals(command: string, action: string | undefined, 
     } while (!deps.signal.aborted);
     return 0;
   }
+  if (action === 'track') { emit(output, await trackGoal(id!, deps)); return 0; }
   if (action === 'maintain') {
     const result = await maintainGoal(id!, deps); emit(output, result);
     return ['needs_attention', 'stale', 'ci_not_reproduced'].includes(result.status) ? 1 : 0;

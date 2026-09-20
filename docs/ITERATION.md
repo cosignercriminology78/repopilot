@@ -44,17 +44,22 @@ Add the following `iteration` section to a trusted controller configuration with
     "maintenance": {
       "trustedReviewers": ["YOUR_GITHUB_LOGIN"],
       "requiredChecks": ["test"]
+    },
+    "postMerge": {
+      "requiredChecks": ["test"],
+      "requireIssueClosed": true
     }
   }
 }
 ```
 
-The JSON above is a configuration fragment, not a complete configuration. Queue and maintenance are optional and disabled when absent. `maxRounds` bounds attempts per acceptance criterion, including after replanning; model and elapsed-time budgets cover the whole goal. One controller executes serially per data directory, preventing concurrent mutation of its goals and publication state.
+The JSON above is a configuration fragment, not a complete configuration. Queue, maintenance and post-merge tracking are optional and disabled when absent. `maxRounds` bounds attempts per acceptance criterion, including after replanning; model and elapsed-time budgets cover the whole goal. One controller executes serially per data directory, preventing concurrent mutation of its goals and publication state.
 
 ```sh
 npm run dev -- iterate --once --config config.local.json
 npm run dev -- iterate --config config.local.json
 npm run dev -- goals maintain GOAL_ID --config config.local.json
+npm run dev -- goals track GOAL_ID --config config.local.json
 ```
 
 `iterate` polls open Issues from the configured repository when `queue` is configured. It requires all configured labels and a trusted **Issue author**, orders candidates by priority labels then creation time, and uses the Issue title/body as the acceptance request. Maintainers should supply precise, independently testable Issue descriptions. `enhancement` selects feature mode; other eligible Issues use bugfix mode. An already claimed Issue number is not automatically restarted, even if its text changes, preventing edits from replenishing the budget. Resume unchanged work explicitly or create a new goal for revised inputs. Ctrl+C stops polling and requests cancellation of active execution. This queue does not choose a product roadmap.
@@ -76,6 +81,8 @@ npm run dev -- discover --apply --expected PREVIEW_TOKEN --config config.local.j
 Experience entries retain outcomes, report references and recent notes. Planning reuses a small set only when repository, pinned commit and configuration match. They are context, never verification evidence or new permissions.
 
 Discovery derives proposals from local error findings and failed or incomplete baseline evidence. It does not scan arbitrary new repositories or invent independent product requirements. Preview produces a content token; `--apply --expected` requires that exact current preview and `publish=true`, then opens deduplicated GitHub Issues for maintainer review. New proposals receive no automatic queue authorization label. Selecting an eligible Issue remains a separate maintainer decision.
+
+Post-merge regressions also enter discovery as evidence-based proposals. See [post-merge tracking and Agent evaluation](POST-MERGE-EVALUATION.md) for the state model, merge-commit checks and evaluation identity fields.
 
 ## Isolated preview and rollback rehearsal
 

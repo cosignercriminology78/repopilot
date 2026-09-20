@@ -26,6 +26,8 @@ A passing existing test suite may miss a new requirement or an untested edge cas
 | A suggested fix has no reproducible verification | Tests are frozen before repair; candidates must preserve test identities and pass independent execution and policy rechecks. |
 | An environment failure or flaky test looks like a code defect | Environment failures receive bounded retries; unstable or incomplete evidence blocks automatic repair. |
 | Review evidence is scattered across logs and patches | Local JSON/Markdown reports retain findings, test outcomes, repair attempts and publication state. |
+| A verified PR is merged but its result is no longer observed | Opt-in tracking records merge-commit checks and Issue closure, then exposes regressions as reviewable proposals. |
+| Agent changes cannot be compared objectively | Explicit suites, cases and profiles aggregate stored verification, cost and post-merge evidence without model self-scoring. |
 
 ## Who is it for?
 
@@ -78,6 +80,8 @@ For an Issue, run `fix --issue 123 --config config.local.json`: establish a pass
 Version **1.3.0** brings [goal-driven iteration](docs/ITERATION.md): explicit acceptance criteria and path scopes, resumable step plans, feature implementation, bounded verification feedback, opt-in Issue queues, PR follow-up, version-scoped experience, evidence-based improvement proposals and isolated preview/rollback health checks. These capabilities are included in the portable packages and matching 1.3.0 Agent image. Maintainers retain task selection, merge and deployment decisions.
 
 Version **1.3.0** includes [Issue → reproduction → repair PR](docs/ISSUE-REPAIR.md) through `fix --issue`, [pytest, Go test and JUnit XML](docs/MULTILINGUAL-TESTS.md) reporters, and [owned-resource crash recovery](docs/RECOVERY.md). Use the matching 1.3.0 controller and Agent image.
+
+The development line after 1.3.0 adds [post-merge tracking and reproducible Agent evaluation](docs/POST-MERGE-EVALUATION.md). It verifies configured checks on the merge commit, records Issue closure, turns regressions into previewed improvement proposals, and compares explicitly tagged evaluation cases by profile.
 
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
 - Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.

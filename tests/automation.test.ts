@@ -22,7 +22,9 @@ async function fixture() {
   const dependencies: AutomationDependencies = { config, store: await store(), signal: new AbortController().signal,
     goals: { read: async () => state, save: async () => {}, list: async () => goals, pause: async () => {}, paused: async () => false, unpause: async () => {}, remember: async () => {}, experiences: async () => [] },
     github: { listPulls: async () => [], pull: async () => feedback.pr, current: async () => undefined, publish: async () => undefined,
-      issue: async () => { throw new Error('Unexpected Issue read'); }, target: async () => ({ branch: 'main', sha: state.sha }), issues: async () => [], feedback: async () => feedback, updatePull: async () => { throw new Error('Unexpected publish'); }, recoverPull: async () => undefined, propose: async () => { throw new Error('Unexpected proposal'); } },
+      issue: async () => { throw new Error('Unexpected Issue read'); }, target: async () => ({ branch: 'main', sha: state.sha }), issues: async () => [], feedback: async () => feedback,
+      outcome: async () => ({ pr: feedback.pr, checks: feedback.checks }),
+      updatePull: async () => { throw new Error('Unexpected publish'); }, recoverPull: async () => undefined, propose: async () => { throw new Error('Unexpected proposal'); } },
     repository: { resolveCommit: async () => state.sha, prepare: async () => {}, fetch: async () => {}, snapshot: async () => new Map([['src/a.ts', 'GOOD']]) },
     runner: { run: async () => result() }, agent: agent() };
   return { d: dependencies, state, feedback, goals };

@@ -1,0 +1,16 @@
+{
+  "title": "Add bounded pagination to search",
+  "objective": "Add page and pageSize inputs to search while preserving the existing result format and default ordering.",
+  "mode": "feature",
+  "branch": "main",
+  "acceptance": [
+    { "id": "page-size", "text": "Search returns at most pageSize results and rejects a pageSize below 1 or above 100." },
+    { "id": "stable-pages", "text": "Consecutive pages preserve default ordering without repeating a result when the input data is unchanged." }
+  ],
+  "allowedPaths": ["src/search", "tests/search"],
+  "evaluation": {
+    "suite": "core-maintenance",
+    "case": "bounded-pagination",
+    "profile": "codex-default"
+  }
+}

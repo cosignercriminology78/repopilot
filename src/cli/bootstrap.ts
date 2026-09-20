@@ -27,7 +27,7 @@ export async function main(args: string[], output: Output = standardOutput): Pro
   if (values.help || !command) { output.write(help); return 0; }
   if (command === 'init') return initialize(values, output);
   if (command === 'doctor') return doctor(values, output);
-  if (!values.config || !['check', 'watch', 'tasks', 'recover', 'fix', 'goals', 'iterate', 'discover', 'experiences'].includes(command)) throw new Error('Use a repository command with --config; see --help.');
+  if (!values.config || !['check', 'watch', 'tasks', 'recover', 'fix', 'goals', 'iterate', 'discover', 'experiences', 'evals'].includes(command)) throw new Error('Use a repository command with --config; see --help.');
   const config = await loadConfig(values.config), store = new Store(config.dataDir);
   if (command === 'recover') {
     const lock = new ControllerLock(config.dataDir), resources = new DockerRecoveryResources(config.dataDir);

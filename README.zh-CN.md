@@ -26,6 +26,8 @@ RepoPilot 是朝这个方向迈出的一步。我们从 GitHub Issue 和 PR 出�
 | 修复建议缺乏可复现的验证 | 修复前冻结测试；候选代码必须保留相同用例，并通过独立执行及规范复查。 |
 | 环境异常或不稳定测试被误当成代码缺陷 | 环境异常有限重试；重复结果不稳定或证据不完整时，阻止自动修复。 |
 | 日志、测试结果和修复补丁分散 | JSON 与 Markdown 报告集中保存问题、用例结果、修复尝试和发布状态。 |
+| 验证通过的 PR 合并后缺少持续结果记录 | 可选的合并后追踪记录 merge commit 检查与 Issue 关闭状态，并将回归转为待审查提案。 |
+| 不同 Agent 策略缺少客观比较 | 显式标记评测套件、用例与配置档案，汇总验证率、成本和合并后证据，不让模型自行打分。 |
 
 ## 适合哪些用户？
 
@@ -90,6 +92,8 @@ npm run dev -- goals maintain GOAL_ID --config config.local.json
 目标文件定义“要完成什么”和“如何验收”，控制器将目标拆分为有依赖关系的步骤，每步先冻结测试，再实现和验证。遇到证据不足、输入变化或预算耗尽时停止；中断后可检查记录并恢复。队列、PR 跟进与预发布检查均需显式配置，不会因升级自动开启。预发布与回滚演练仅运行隔离 Docker 快照，不操作生产服务或真实流量。完整配置、命令及边界见[使用说明](docs/ITERATION.md)。
 
 **1.3.0** 已包含 [Issue → 测试复现 → 修复 PR](docs/ISSUE-REPAIR.md)、[pytest、Go test 与 JUnit XML](docs/MULTILINGUAL-TESTS.md) 和[崩溃恢复](docs/RECOVERY.md)。下载包与 Agent 镜像应使用匹配的 1.3.0 版本。
+
+1.3.0 之后的开发版本开始加入[合并后追踪与可复现 Agent 评测](docs/POST-MERGE-EVALUATION.md)：在 merge commit 上核验配置的检查与 Issue 状态，将回归接入需人工确认的改进提案，并按明确标记的 suite、case、profile 比较不同 Agent 配置。
 
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。
 - 从 base 读取规则，支持嵌套 AGENTS.md、静态文本规则、JS/TS AST 调用规则、规则冲突检查、历史问题去重及带有效期的规则豁免。

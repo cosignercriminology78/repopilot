@@ -17,7 +17,8 @@ test('goal inspection and pause work under a controller lock and enforce reposit
   await writeFile(config, JSON.stringify({ repository: 'owner/repo', dataDir: root }));
   const goals = new FileIterationStore(root), id = 'a'.repeat(24);
   const state: GoalState = { schemaVersion: 1, id, repository: 'owner/repo', configHash: 'old-config',
-    spec: { title: 'Example goal', objective: 'Implement a feature', mode: 'feature', acceptance: [{ id: 'accept', text: 'Expected behavior' }], allowedPaths: ['src'] },
+    spec: { title: 'Example goal', objective: 'Implement a feature', mode: 'feature', acceptance: [{ id: 'accept', text: 'Expected behavior' }], allowedPaths: ['src'],
+      evaluation: { suite: 'core-suite', case: 'example-case', profile: 'codex-default' } },
     branch: 'main', sha: 'a'.repeat(40), status: 'planned', createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',
     steps: [], completed: [], changes: [], reports: [], rounds: 0, calls: 0, tokens: 0, elapsedMs: 0, notes: [] };
   await goals.save(state); await goals.save({ ...state, id: 'b'.repeat(24), repository: 'other/repo' });
@@ -37,6 +38,8 @@ test('goal inspection and pause work under a controller lock and enforce reposit
     assert.equal(await goals.paused('b'.repeat(24)), false);
     assert.equal(await main(['experiences', '--config', config], output), 0);
     assert.equal(JSON.parse(lines.at(-1)!).experiences[0].goalId, id);
+    assert.equal(await main(['evals', '--suite', 'core-suite', '--config', config], output), 0);
+    assert.equal(JSON.parse(lines.at(-1)!).records[0].case, 'example-case');
     await assert.rejects(main(['goals', 'list', '--limit', '0', '--config', config], output), /pagination/);
     await assert.rejects(main(['goals', 'list', '--status', 'unknown', '--config', config], output), /status/);
     await assert.rejects(main(['goals', 'plan', '--config', config], output), /--spec/);

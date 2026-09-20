@@ -4,7 +4,7 @@ import { passed } from '../../domain/test-evidence.js';
 import { safePath } from '../../domain/snapshot.js';
 import { issueDigest } from '../../domain/iteration.js';
 import { feedbackDigest } from '../../domain/feedback.js';
-import type { PullFeedback, QueueIssue } from '../../ports/automation.js';
+import type { PullFeedback, PullOutcome, QueueIssue } from '../../ports/automation.js';
 import type { Issue, PullRequest, Report } from '../../domain/types.js';
 import type { GitHub as GitHubPort } from '../../ports/github.js';
 import { markdownReport } from '../../reporting/markdown.js';
@@ -61,23 +61,27 @@ export class GitHub implements GitHubPort {
     throw new Error('GitHub collection exceeded 1,000 entries; refusing partial evidence.');
   }
   issues(state: 'open' | 'all'): Promise<QueueIssue[]> { return this.pages(`issues?state=${state}&sort=created&direction=asc`); }
+  private async checks(sha: string): Promise<PullFeedback['checks']> {
+    const checks: PullFeedback['checks'] = [];
+    for (let page = 1; ; page++) {
+      const result = await this.request<{ total_count: number; check_runs: PullFeedback['checks'] }>(`commits/${sha}/check-runs?per_page=100&page=${page}`);
+      checks.push(...result.check_runs.map(c => ({ name: c.name, status: c.status, conclusion: c.conclusion })));
+      if (checks.length >= result.total_count) break;
+      if (page >= 10 || !result.check_runs.length) throw new Error('Incomplete check-run evidence.');
+    }
+    const statuses = await this.pages<{ context: string; state: string }>(`commits/${sha}/statuses`);
+    const contexts = new Set<string>();
+    for (const status of statuses) if (!contexts.has(status.context)) {
+      contexts.add(status.context); checks.push({ name: status.context, status: status.state === 'pending' ? 'in_progress' : 'completed', conclusion: status.state });
+    }
+    return checks;
+  }
   async feedback(number: number): Promise<PullFeedback> {
     const pr = await this.pull(number);
     const comments = await this.pages<{ id: number; user: { login: string }; body: string }>(`issues/${number}/comments`);
     const reviews = await this.pages<{ id: number; user: { login: string }; body: string; commit_id: string; state: string }>(`pulls/${number}/reviews`);
     const inline = await this.pages<{ id: number; user: { login: string }; body: string; commit_id: string }>(`pulls/${number}/comments`);
-    const checks: PullFeedback['checks'] = [];
-    for (let page = 1; ; page++) {
-      const result = await this.request<{ total_count: number; check_runs: PullFeedback['checks'] }>(`commits/${pr.head.sha}/check-runs?per_page=100&page=${page}`);
-      checks.push(...result.check_runs.map(c => ({ name: c.name, status: c.status, conclusion: c.conclusion })));
-      if (checks.length >= result.total_count) break;
-      if (page >= 10 || !result.check_runs.length) throw new Error('Incomplete check-run evidence.');
-    }
-    const statuses = await this.pages<{ context: string; state: string }>(`commits/${pr.head.sha}/statuses`);
-    const contexts = new Set<string>();
-    for (const status of statuses) if (!contexts.has(status.context)) {
-      contexts.add(status.context); checks.push({ name: status.context, status: status.state === 'pending' ? 'in_progress' : 'completed', conclusion: status.state });
-    }
+    const checks = await this.checks(pr.head.sha);
     const headCommit = await this.request<{ message: string }>(`git/commits/${pr.head.sha}`);
     const headRun = headCommit.message.match(/^RepoPilot-Run: ([a-f0-9]{24})$/m)?.[1];
     return { pr, headRun, checks, comments: [
@@ -85,6 +89,12 @@ export class GitHub implements GitHubPort {
       ...reviews.filter(r => r.state !== 'DISMISSED' && r.state !== 'PENDING').map(c => ({ id: 'review-' + c.id, author: c.user.login, body: c.body, commit: c.commit_id })),
       ...inline.map(c => ({ id: 'inline-' + c.id, author: c.user.login, body: c.body, commit: c.commit_id }))
     ] };
+  }
+  async outcome(number: number): Promise<PullOutcome> {
+    const pr = await this.request<PullOutcome['pr']>(`pulls/${number}`);
+    const sha = pr.merge_commit_sha ?? pr.head.sha;
+    if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error('Pull request outcome has no valid commit.');
+    return { pr, checks: await this.checks(sha) };
   }
   async propose(title: string, body: string): Promise<string> {
     if (!this.token) throw new Error('GitHub token required.');

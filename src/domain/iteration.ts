@@ -11,7 +11,8 @@ export const goalSpecSchema = z.object({
   mode: z.enum(['feature', 'bugfix']), branch: z.string().min(1).max(200).optional(),
   issue: z.number().int().positive().optional(),
   acceptance: z.array(z.object({ id, text: z.string().min(8).max(2000) }).strict()).min(1).max(20),
-  allowedPaths: z.array(z.string().refine(safePath)).min(1).max(30)
+  allowedPaths: z.array(z.string().refine(safePath)).min(1).max(30),
+  evaluation: z.object({ suite: id, case: id, profile: id }).strict().optional()
 }).strict().refine(s => new Set(s.acceptance.map(a => a.id)).size === s.acceptance.length, 'Acceptance IDs must be unique.');
 export type GoalSpec = z.infer<typeof goalSpecSchema>;
 export const goalStepSchema = z.object({
@@ -35,6 +36,10 @@ export const iterationSchema = z.object({
   maintenance: z.object({ trustedReviewers: z.array(z.string().min(1)).min(1).max(50),
     requiredChecks: z.array(z.string().min(1)).min(1).max(30)
   }).strict().optional(),
+  postMerge: z.object({
+    requiredChecks: z.array(z.string().min(1)).min(1).max(30),
+    requireIssueClosed: z.boolean().default(true)
+  }).strict().optional(),
   preview: runnerSchema.optional()
 }).strict();
 export type IterationConfig = z.infer<typeof iterationSchema>;
@@ -54,6 +59,16 @@ export interface GoalState {
     patches?: string[];
     outcome?: 'running' | 'failed' | 'verified' | 'updated' };
   preview?: { candidate: TestResult; rollback: TestResult };
+  postMerge?: {
+    pull: number;
+    status: 'waiting_for_merge' | 'observing' | 'healthy' | 'regressed' | 'closed_unmerged';
+    mergeSha?: string;
+    mergedAt?: string;
+    checkedAt: string;
+    checks: { name: string; status: string; conclusion: string | null }[];
+    issueState?: string;
+    reasons: string[];
+  };
 }
 export function validateSteps(steps: GoalStep[], spec: GoalSpec, limit: number): GoalStep[] {
   const parsed = z.array(goalStepSchema).min(1).max(limit).parse(steps);

@@ -15,6 +15,20 @@ test('stale commits, descriptions, drafts and forks prevent all GitHub mutations
     assert.equal(await client.publish(verifiedReport()), undefined); assert.deepEqual(methods, ['GET']);
   }
 });
+test('post-merge outcome reads required evidence from the merge commit', async () => {
+  const client = new GitHub('owner/repo', 'fixture'), merge = 'c'.repeat(40), paths: string[] = [];
+  client.request = async <T>(path: string): Promise<T> => {
+    paths.push(path);
+    if (path === 'pulls/1') return { ...pr, state: 'closed', merged_at: '2026-01-01T00:00:00Z', merge_commit_sha: merge } as T;
+    if (path.includes('check-runs')) return { total_count: 1, check_runs: [{ name: 'tests', status: 'completed', conclusion: 'success' }] } as T;
+    if (path.includes('statuses')) return [] as T;
+    throw new Error('Unexpected path: ' + path);
+  };
+  const outcome = await client.outcome(1);
+  assert.equal(outcome.checks[0]?.conclusion, 'success');
+  assert.ok(paths.some(path => path.startsWith(`commits/${merge}/check-runs`)));
+  assert.ok(!paths.some(path => path.includes(pr.head.sha) && path.includes('check-runs')));
+});
 test('publication failures persist bounded retry attempts and permanent failures stop', async () => {
   const config = configSchema.parse({ repository: 'owner/repo', publish: true, retry: { baseDelayMs: 0, maxTaskExecutions: 2 } });
   const saved = await store(), report = verifiedReport(); let calls = 0;
