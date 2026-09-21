@@ -1,6 +1,6 @@
-# Goal-driven iteration (1.3.0)
+# Goal-driven iteration (1.5.0)
 
-These commands are included in the 1.3.0 portable packages. Use the matching `ghcr.io/indada/repopilot-agent:1.3.0` image, or build both the controller and Agent from the same checkout. Existing `check`, `watch` and `fix` workflows remain available without iteration configuration. The examples below use a source installation; portable users replace `npm run dev --` with `./repopilot` on Linux/macOS or `.\repopilot.cmd` on Windows.
+These commands are included in the 1.5.0 portable packages. Use the matching `ghcr.io/indada/repopilot-agent:1.5.0` image, or build both the controller and Agent from the same checkout. Existing `check`, `watch` and `fix` workflows remain available without iteration configuration. The examples below use a source installation; portable users replace `npm run dev --` with `./repopilot` on Linux/macOS or `.\repopilot.cmd` on Windows.
 
 ## Define and execute a goal
 

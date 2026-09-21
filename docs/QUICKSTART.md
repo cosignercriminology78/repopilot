@@ -1,6 +1,6 @@
-# RepoPilot 1.3.0 portable release
+# RepoPilot 1.5.0 portable release
 
-Download the archive for your OS/CPU from https://github.com/indada/repopilot/releases/tag/v1.3.0 and extract it. Linux and macOS packages support x64 and ARM64; Windows supports x64. Verify the archive against the release's SHA256SUMS.txt. Keep the entire extracted directory together: the launcher uses the included Node.js runtime and dependencies. No Node.js installation or npm command is required.
+Download the archive for your OS/CPU from https://github.com/indada/repopilot/releases/tag/v1.5.0 and extract it. Linux and macOS packages support x64 and ARM64; Windows supports x64. Verify the archive against the release's SHA256SUMS.txt. Keep the entire extracted directory together: the launcher uses the included Node.js runtime and dependencies. No Node.js installation or npm command is required.
 
 Install Git and Docker with Linux containers. Use a dedicated worker for untrusted code. These packages are CLI tools, not graphical installers; macOS packages are not notarized and Windows launchers are not code-signed. Linux requires a glibc-based distribution supported by Node.js 22.
 
@@ -20,19 +20,19 @@ On Windows PowerShell, replace `./repopilot` with `.\repopilot.cmd` and use a Wi
 
 ## Enable Codex
 
-The versioned agent image is `ghcr.io/indada/repopilot-agent:1.3.0` (Linux amd64/arm64). Pull it before enabling the agent:
+The versioned agent image is `ghcr.io/indada/repopilot-agent:1.5.0` (Linux amd64/arm64). Pull it before enabling the agent:
 
 ```sh
-docker pull ghcr.io/indada/repopilot-agent:1.3.0
+docker pull ghcr.io/indada/repopilot-agent:1.5.0
 ```
 
 Alternatively, build from the source files included in the extracted directory:
 
 ```sh
-docker build -f Dockerfile.agent -t ghcr.io/indada/repopilot-agent:1.3.0 .
+docker build -f Dockerfile.agent -t ghcr.io/indada/repopilot-agent:1.5.0 .
 ```
 
-Set `OPENAI_API_KEY` in your shell environment using your credential manager. Set `agent.enabled=true` for review and test planning, and `agent.repair=true` for repair proposals. The initialized config selects the matching 1.3.0 image. Model calls send selected repository context to OpenAI services.
+Set `OPENAI_API_KEY` in your shell environment using your credential manager. Set `agent.enabled=true` for review and test planning, and `agent.repair=true` for repair proposals. The initialized config selects the matching 1.5.0 image. Model calls send selected repository context to OpenAI services.
 
 To watch GitHub PRs, set `GITHUB_TOKEN` or `GH_TOKEN`, then run `repopilot watch --config config.local.json --once`. Publishing additionally requires `publish=true` and repository Contents/Pull requests write permissions. Review results locally before enabling publication. All three switches are disabled initially.
 
@@ -47,7 +47,7 @@ After configuring the runner and enabling agent review/repair:
 ./repopilot recover --config config.local.json
 ```
 
-`fix` uses the repository default branch unless `--branch` is supplied. Publishing remains opt-in. See [Issue repair](https://github.com/indada/repopilot/blob/v1.3.0/docs/ISSUE-REPAIR.md) for reproduction gates and [multilingual tests](https://github.com/indada/repopilot/blob/v1.3.0/docs/MULTILINGUAL-TESTS.md) for pytest, Go and JUnit configuration. Recovery first returns a preview; follow [recovery](https://github.com/indada/repopilot/blob/v1.3.0/docs/RECOVERY.md) to apply with its expected token.
+`fix` uses the repository default branch unless `--branch` is supplied. Publishing remains opt-in. See [Issue repair](https://github.com/indada/repopilot/blob/v1.5.0/docs/ISSUE-REPAIR.md) for reproduction gates and [multilingual tests](https://github.com/indada/repopilot/blob/v1.5.0/docs/MULTILINGUAL-TESTS.md) for pytest, Go and JUnit configuration. Recovery first returns a preview; follow [recovery](https://github.com/indada/repopilot/blob/v1.5.0/docs/RECOVERY.md) to apply with its expected token.
 
 ## Goal-driven iteration
 
@@ -61,8 +61,16 @@ Add the optional `iteration` configuration described in the bundled `docs/ITERAT
 
 Replace `GOAL_ID` with the planning result. `iterate` requires an explicitly configured Issue queue or PR maintenance policy. Publication remains opt-in. Goal budgets, pause/resume, review follow-up and isolated preview verification are explained in the iteration guide.
 
-## Upgrade from 1.0.0 or 1.1.0
+To isolate planning, testing, implementation and review in separate Codex roles, add `iteration.collaboration` as described in `docs/MULTI-AGENT-COLLABORATION.md`. The roles share one bounded execution budget. Inspect persisted DAG state and role handoffs with:
 
-Stop the old controller and extract 1.3.0 into a separate directory. Preserve your configuration and data directory; run from the same working directory or keep the configured data path unchanged. Update `agent.image` to `ghcr.io/indada/repopilot-agent:1.3.0` and pull it. Existing configuration is not overwritten by `init`. Run `--version` and `doctor` before restarting.
+```sh
+./repopilot goals graph GOAL_ID --config config.local.json
+```
 
-Configuration changes may require `tasks rerun` rather than `tasks resume`; rerun preserves the original pinned commits. Use `watch` or a new `fix` for current GitHub inputs. Keep old reports and snapshots. Version 1.0.0 locks and unlabeled Docker resources require manual inspection; 1.3.0 recovery does not claim ownership of them.
+Post-merge tracking and repeatable Agent evaluations are documented in `docs/POST-MERGE-EVALUATION.md`.
+
+## Upgrade from an earlier release
+
+Stop the old controller and extract 1.5.0 into a separate directory. Preserve your configuration and data directory; run from the same working directory or keep the configured data path unchanged. Update `agent.image` to `ghcr.io/indada/repopilot-agent:1.5.0` and pull it. Existing configuration is not overwritten by `init`. Run `--version` and `doctor` before restarting.
+
+Configuration changes may require `tasks rerun` rather than `tasks resume`; rerun preserves the original pinned commits. Use `watch` or a new `fix` for current GitHub inputs. Keep old reports and snapshots. Version 1.0.0 locks and unlabeled Docker resources require manual inspection; 1.5.0 recovery does not claim ownership of them.
