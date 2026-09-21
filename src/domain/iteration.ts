@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { safePath } from './snapshot.js';
 import { createHash } from 'node:crypto';
 import { runnerSchema } from './runner-config.js';
+import { collaborationSchema, type AgentHandoff } from './collaboration.js';
 import type { RepairChange, TestResult } from './types.js';
 
 const id = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
@@ -40,6 +41,7 @@ export const iterationSchema = z.object({
     requiredChecks: z.array(z.string().min(1)).min(1).max(30),
     requireIssueClosed: z.boolean().default(true)
   }).strict().optional(),
+  collaboration: collaborationSchema.optional(),
   preview: runnerSchema.optional()
 }).strict();
 export type IterationConfig = z.infer<typeof iterationSchema>;
@@ -48,6 +50,8 @@ export interface GoalState {
   branch: string; sha: string; issueDigest?: string; createdAt: string; updatedAt: string;
   status: 'planned' | 'running' | 'paused' | 'needs_attention' | 'verified' | 'published' | 'stale';
   steps: GoalStep[]; completed: string[]; changes: RepairChange[];
+  stepStates?: Record<string, { status: 'pending' | 'running' | 'completed' | 'rejected' | 'blocked';
+    attempts: number; reportId?: string; reason?: string; updatedAt: string }>;
   reports: string[]; rounds: number; calls: number; tokens: number; elapsedMs: number;
   activeSince?: string;
   queued?: boolean;
@@ -59,6 +63,7 @@ export interface GoalState {
     patches?: string[];
     outcome?: 'running' | 'failed' | 'verified' | 'updated' };
   preview?: { candidate: TestResult; rollback: TestResult };
+  handoffs?: AgentHandoff[];
   postMerge?: {
     pull: number;
     status: 'waiting_for_merge' | 'observing' | 'healthy' | 'regressed' | 'closed_unmerged';

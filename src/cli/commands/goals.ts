@@ -18,7 +18,7 @@ function page(values: CliValues) {
 }
 export function validateGoalCommand(command: string, action: string | undefined, id: string | undefined, values: CliValues) {
   if (command === 'goals') {
-    if (!['plan', 'run', 'replan', 'maintain', 'track', 'list', 'show', 'pause'].includes(action ?? '')) throw new Error('Unknown goals action.');
+    if (!['plan', 'run', 'replan', 'maintain', 'track', 'list', 'show', 'graph', 'pause'].includes(action ?? '')) throw new Error('Unknown goals action.');
     if (action === 'plan' && !values.spec) throw new Error('Planning requires --spec GOAL_JSON.');
     if (!['plan', 'list'].includes(action!) && !id) throw new Error('Goal ID is required.');
     if (id && !/^[a-f0-9]{24}$/.test(id)) throw new Error('Invalid goal ID.');
@@ -39,18 +39,25 @@ export async function inspectGoals(command: string, action: string | undefined, 
     emit(output, evaluateGoals((await goals.list()).filter(goal => goal.repository === config.repository), values.suite));
     return true;
   }
-  if (command !== 'goals' || !['list', 'show', 'pause'].includes(action ?? '')) return false;
+  if (command !== 'goals' || !['list', 'show', 'graph', 'pause'].includes(action ?? '')) return false;
   if (action === 'list') {
     const { limit, offset } = page(values);
     if (values.status && !statuses.includes(values.status as GoalState['status'])) throw new Error('Unknown goal status.');
     const states = (await goals.list()).filter(s => s.repository === config.repository && (!values.status || s.status === values.status));
     const entries = await Promise.all(states.slice(offset, offset + limit).map(async s => ({ id: s.id, title: s.spec.title,
-      status: s.status, completed: s.completed.length, steps: s.steps.length, updatedAt: s.updatedAt, pauseRequested: await goals.paused(s.id) })));
+      status: s.status, completed: s.completed.length, steps: s.steps.length,
+      blocked: Object.values(s.stepStates ?? {}).filter(step => step.status === 'blocked').length,
+      rejected: Object.values(s.stepStates ?? {}).filter(step => step.status === 'rejected').length,
+      updatedAt: s.updatedAt, pauseRequested: await goals.paused(s.id) })));
     emit(output, { total: states.length, offset, goals: entries }); return true;
   }
   const state = await goals.read(id!);
   if (!state || state.repository !== config.repository) throw new Error('Goal not found in this repository.');
   if (action === 'pause') { await goals.pause(id!); emit(output, { id, pauseRequested: true }); }
+  else if (action === 'graph') emit(output, { id: state.id, status: state.status,
+    steps: state.steps.map(step => ({ ...step, execution: state.stepStates?.[step.id] ?? {
+      status: state.completed.includes(step.id) ? 'completed' : 'pending', attempts: 0, updatedAt: state.updatedAt } })),
+    handoffs: state.handoffs ?? [] });
   else emit(output, { ...state, pauseRequested: await goals.paused(id!) });
   return true;
 }

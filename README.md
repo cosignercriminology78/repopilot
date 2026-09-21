@@ -83,6 +83,8 @@ Version **1.3.0** includes [Issue → reproduction → repair PR](docs/ISSUE-REP
 
 The development line after 1.3.0 adds [post-merge tracking and reproducible Agent evaluation](docs/POST-MERGE-EVALUATION.md). It verifies configured checks on the merge commit, records Issue closure, turns regressions into previewed improvement proposals, and compares explicitly tagged evaluation cases by profile.
 
+The v1.5 development line adds [multi-Agent collaboration](docs/MULTI-AGENT-COLLABORATION.md): separate Planner, Tester, Developer and Reviewer Codex roles, a shared bounded budget, durable role handoffs and explicit recoverable DAG-node states. The deterministic controller and independent runner retain final authority.
+
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
 - Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.
 - Nested AGENTS.md semantic review with verbatim rule/code citations and historical finding comparison.

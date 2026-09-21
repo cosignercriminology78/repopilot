@@ -3,8 +3,8 @@
 | Directory | Responsibility |
 | --- | --- |
 | cli/ | Argument parsing, command handlers, output, configuration loading and dependency assembly |
-| application/ | Verification, goal planning/iteration, Issue queue, PR maintenance, proposals, replay/cancellation and publication |
-| domain/ | Types, configuration schema, identities, snapshot operations, policies, patch validation and test assessment |
+| application/ | Verification, goal planning/iteration, role handoffs, Issue queue, PR maintenance, proposals, replay/cancellation and publication |
+| domain/ | Types, collaboration/goal schemas, identities, snapshot operations, policies, patch validation and test assessment |
 | ports/ | Agent, Runner, task/goal stores, Repository, GitHub and automation contracts |
 | adapters/codex/ | Codex container execution, SDK entry point and context preparation |
 | adapters/testing/ | Docker execution and recovery; Node/Vitest, pytest/JUnit XML and Go JSON evidence |

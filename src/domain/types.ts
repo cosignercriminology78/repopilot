@@ -1,3 +1,4 @@
+import type { AgentHandoff } from './collaboration.js';
 export type FileMode = '100644' | '100755';
 export type Snapshot = Map<string, string> & { modes?: Map<string, FileMode> };
 export interface Finding {
@@ -53,4 +54,5 @@ export interface Report {
   publication?: { attempts: number; retryAfter?: string; error?: string; retryable: boolean };
   replay?: { repoPath: string; description: string; pr?: PullRequest; issue?: IssueSource; runKey?: string };
   rerunOf?: string;
+  handoffs?: AgentHandoff[];
 }

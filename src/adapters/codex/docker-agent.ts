@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import type { Answer } from '../../domain/agent-answer.js';
+import type { AgentRole } from '../../domain/collaboration.js';
 import { answerSchema } from '../../domain/agent-answer.js';
 import type { Config } from '../../domain/config.js';
 import type { describeTestEnvironment } from '../../domain/runner-config.js';
@@ -15,14 +16,33 @@ import { execute } from '../../shared/process.js';
 import { ownerLabels, resourceOwner } from '../../shared/resource-owner.js';
 import { contextBatches } from './context.js';
 
-export class DockerCodexAgent implements Agent {
+export class SharedAgentBudget {
   private calls = 0;
   private tokens = 0;
   private unaccounted = 0;
-  constructor(private config: Config['agent'], private dataDir: string,
-    private testEnvironment?: ReturnType<typeof describeTestEnvironment>) {}
-  resetBudget() { this.calls = 0; this.tokens = 0; this.unaccounted = 0; }
+  constructor(private maxCalls: number, private maxTokens: number) {}
+  reset() { this.calls = 0; this.tokens = 0; this.unaccounted = 0; }
   usage() { return { calls: this.calls, tokens: this.tokens, complete: this.unaccounted === 0 }; }
+  reserveCall() {
+    if (this.calls >= this.maxCalls || this.tokens >= this.maxTokens) throw new Error('Agent task budget exhausted.');
+    this.calls++;
+  }
+  beginUnaccounted() { this.unaccounted++; }
+  settle(tokens: number) {
+    this.tokens += tokens; this.unaccounted--;
+    if (this.tokens > this.maxTokens) throw new Error('Agent task token budget exceeded; further calls blocked.');
+  }
+}
+
+export class DockerCodexAgent implements Agent {
+  private budget: SharedAgentBudget;
+  constructor(private config: Config['agent'], private dataDir: string,
+    private testEnvironment?: ReturnType<typeof describeTestEnvironment>, budget?: SharedAgentBudget,
+    private assignedRole?: AgentRole) {
+    this.budget = budget ?? new SharedAgentBudget(config.maxCalls, config.maxTokens);
+  }
+  resetBudget() { this.budget.reset(); }
+  usage() { return this.budget.usage(); }
   design(base: Snapshot, context: string, signal?: AbortSignal) { return this.call('roadmap', base, base, context, signal); }
   review(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, paths?: string[]) { return this.call('review', base, head, description, signal, paths); }
   plan(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, intent?: 'feature' | 'bugfix') { return this.call('plan', base, head, description, signal, undefined, intent); }
@@ -35,14 +55,14 @@ export class DockerCodexAgent implements Agent {
     const combined: Answer = { findings: [], changes: [], scenarios: [], summary: '' };
     for (const batch of batches) {
       throwIfAborted(signal);
-      if (this.calls >= this.config.maxCalls || this.tokens >= this.config.maxTokens) throw new Error('Agent task budget exhausted.');
-      this.calls++;
-      const input = JSON.stringify({ mode, intent, model: this.config.model, context, testEnvironment: this.testEnvironment, ...batch });
+      this.budget.reserveCall();
+      const role = this.assignedRole ?? ({ roadmap: 'planner', plan: 'tester', repair: 'developer', review: 'reviewer' } as const)[mode as 'roadmap' | 'plan' | 'repair' | 'review'];
+      const input = JSON.stringify({ mode, role, intent, model: this.config.model, context, testEnvironment: this.testEnvironment, ...batch });
       if (Buffer.byteLength(input) > 500000) throw new Error('Evidence/context exceeds per-call budget.');
       const name = 'repopilot-agent-' + randomUUID(), root = resolve(this.dataDir, 'work', name);
       await mkdir(root, { recursive: true }); await writeFile(resolve(root, 'input.json'), input);
       try {
-        this.unaccounted++;
+        this.budget.beginUnaccounted();
         const result = await execute('docker', ['run', '--rm', '--name', name, '--read-only',
           ...ownerLabels(await resourceOwner(this.dataDir)),
           '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128', '--memory', '2g', '--cpus', '2',
@@ -53,9 +73,7 @@ export class DockerCodexAgent implements Agent {
         if (result.code === 125 || result.timedOut) throw new RetryableError('Codex container was unavailable or timed out.');
         if (result.code !== 0) throw new Error('Codex container failed: ' + result.stderr.slice(-2000));
         const envelope = z.object({ answer: answerSchema, tokens: z.number().int().nonnegative() }).parse(JSON.parse(result.stdout));
-        this.tokens += envelope.tokens;
-        this.unaccounted--;
-        if (this.tokens > this.config.maxTokens) throw new Error('Agent task token budget exceeded; further calls blocked.');
+        this.budget.settle(envelope.tokens);
         for (const change of envelope.answer.changes) {
           if (mode === 'repair' && head.has(change.path) && !batch.diff.some(f => f.path === change.path) && !batch.files.some(f => f.path === change.path)) {
             throw new Error('Repair targets a file outside supplied context: ' + change.path);

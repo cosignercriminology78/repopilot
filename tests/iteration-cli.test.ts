@@ -31,6 +31,8 @@ test('goal inspection and pause work under a controller lock and enforce reposit
     assert.equal(JSON.parse(lines.at(-1)!).total, 1);
     assert.equal(await main(['goals', 'show', id, '--config', config], output), 0);
     assert.equal(JSON.parse(lines.at(-1)!).configHash, 'old-config');
+    assert.equal(await main(['goals', 'graph', id, '--config', config], output), 0);
+    assert.deepEqual(JSON.parse(lines.at(-1)!).steps, []);
     assert.equal(await main(['goals', 'pause', id, '--config', config], output), 0);
     assert.equal(await goals.paused(id), true);
     assert.equal((await goals.read(id))!.status, 'planned');
@@ -53,6 +55,7 @@ test('goal specification and queue flags are parsed without ambiguity', () => {
   const result = parseCli(['goals', 'plan', '--spec', 'goal.json', '--config', 'local.json']);
   assert.equal(result.values.spec, 'goal.json'); assert.deepEqual(result.positionals, ['goals', 'plan']);
   assert.equal(parseCli(['iterate', '--once']).values.once, true);
+  assert.deepEqual(parseCli(['goals', 'graph', 'a'.repeat(24)]).positionals, ['goals', 'graph', 'a'.repeat(24)]);
 });
 
 test('iteration polling exits on cancellation and refuses an unconfigured loop', async () => {

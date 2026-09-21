@@ -32,6 +32,8 @@ export function markdownReport(report: Report): string {
       block(item.result.output.slice(0, 4000)));
   }
   lines.push('', '## Repair attempts', ...report.repairs.map(r => '- ' + safe(r.number + ': ' + r.summary + ' — ' + (r.accepted ? 'accepted' : r.reason ?? 'rejected'))),
+    '', '## Agent handoffs', ...(report.handoffs?.map(h => '- ' + safe(`${h.role}/${h.action}: ${h.status}; input ${h.inputDigest}; output ${h.outputDigest ?? 'unavailable'}`))
+      ?? ['No role handoffs recorded.']),
     '', '## Notes', ...report.notes.map(n => '- ' + safe(n)), '',
     'Agent calls: ' + (report.agentUsage?.calls ?? 0) + '; reported tokens: ' + (report.agentUsage?.tokens ?? 0),
     '', 'Full outputs and patches are retained in the local JSON report. Human review is required before merging.');

@@ -62,6 +62,9 @@ test('goal executes dependent steps, cumulatively verifies all acceptance tests 
   const finished = await runGoal(created.id, d);
   assert.equal(finished.status, 'verified', finished.notes.join('\n'));
   assert.deepEqual(finished.completed, ['negative', 'zero']); assert.equal(finished.reports.length, 2);
+  assert.deepEqual(Object.values(finished.stepStates ?? {}).map(step => step.status), ['completed', 'completed']);
+  assert.equal(finished.stepStates?.negative?.reportId, finished.reports[0]!.split(':')[1]);
+  assert.ok(finished.handoffs?.some(handoff => handoff.role === 'planner' && handoff.status === 'completed'));
   assert.equal(finished.changes.length, 4);
   assert.equal((await new FileIterationStore(d.config.dataDir).read(created.id))?.status, 'verified');
   assert.equal((await d.goals.experiences())[0]?.outcome, 'verified');
@@ -88,7 +91,9 @@ test('goal resume skips completed implementation but reruns cumulative verificat
 
 test('resume fails closed when stored completed-step evidence is missing', async () => {
   const d = await fixture(), created = await createGoal(spec, d), completed = await runGoal(created.id, d);
-  const read = d.store.read.bind(d.store), missing = completed.reports[0]!.split(':')[1]!;
+  assert.equal(completed.status, 'verified', completed.notes.join('\n'));
+  assert.ok(completed.reports[0], `Expected completed-step evidence: ${JSON.stringify(completed)}`);
+  const read = d.store.read.bind(d.store), missing = completed.reports[0].split(':')[1]!;
   d.store.read = async id => id === missing ? undefined : read(id);
   const resumed = await runGoal(created.id, d);
   assert.equal(resumed.status, 'needs_attention');
@@ -180,6 +185,8 @@ test('failed verification replans once and repeated patches across rounds halt f
   d.agent!.repair = async () => { repairs++; return answer([{ path: 'src/negative.ts', content: 'STILL_BROKEN' }]); };
   const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
   assert.equal(finished.status, 'needs_attention'); assert.equal(finished.completed.length, 0);
+  assert.equal(finished.stepStates?.[finished.steps[0]!.id]?.status, 'rejected');
+  assert.equal(finished.stepStates?.[finished.steps[1]!.id]?.status, 'blocked');
   assert.equal(designs, 2); assert.equal(repairs, 2); assert.equal(finished.reports.length, 2);
   assert.match(finished.notes.join('\n'), /Repeated patch/);
 });

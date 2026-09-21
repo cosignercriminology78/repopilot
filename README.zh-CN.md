@@ -95,6 +95,8 @@ npm run dev -- goals maintain GOAL_ID --config config.local.json
 
 1.3.0 之后的开发版本开始加入[合并后追踪与可复现 Agent 评测](docs/POST-MERGE-EVALUATION.md)：在 merge commit 上核验配置的检查与 Issue 状态，将回归接入需人工确认的改进提案，并按明确标记的 suite、case、profile 比较不同 Agent 配置。
 
+v1.5 开发版本开始加入[多智能体协作](docs/MULTI-AGENT-COLLABORATION.md)：Planner、Tester、Developer、Reviewer 使用独立 Codex 角色，共享有上限的预算，保留可恢复的角色交接和任务 DAG 状态；最终状态仍由确定性控制器与独立测试执行器决定。
+
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。
 - 从 base 读取规则，支持嵌套 AGENTS.md、静态文本规则、JS/TS AST 调用规则、规则冲突检查、历史问题去重及带有效期的规则豁免。
 - 语义结论必须引用可信规范原文和对应代码证据。

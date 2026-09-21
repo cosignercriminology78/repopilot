@@ -1,4 +1,5 @@
 import { DockerCodexAgent } from '../adapters/codex/docker-agent.js';
+import { CodexAgentTeam } from '../adapters/codex/team.js';
 import { GitHub } from '../adapters/github/client.js';
 import { Store } from '../adapters/storage/file-store.js';
 import { FileIterationStore } from '../adapters/storage/iteration-store.js';
@@ -50,8 +51,11 @@ export async function main(args: string[], output: Output = standardOutput): Pro
     const github = new GitHub(config.repository, undefined, { signal: abort.signal, retry: config.retry });
     const runtime: Runtime = { config, store, repository: gitRepository, signal: abort.signal,
       runner: config.runner ? new DockerRunner(config.runner, config.dataDir) : undefined,
-      agent: config.agent.enabled ? new DockerCodexAgent(config.agent, config.dataDir,
-        config.runner ? describeTestEnvironment(config.runner) : undefined) : undefined,
+      agent: config.agent.enabled ? (config.iteration?.collaboration
+        ? new CodexAgentTeam(config.agent, config.iteration.collaboration, config.dataDir,
+          config.runner ? describeTestEnvironment(config.runner) : undefined)
+        : new DockerCodexAgent(config.agent, config.dataDir,
+          config.runner ? describeTestEnvironment(config.runner) : undefined)) : undefined,
       github };
     if (['goals', 'iterate', 'discover'].includes(command)) return executeGoals(command, action, task, values, {
       ...runtime, goals, github,

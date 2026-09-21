@@ -4,11 +4,12 @@ import type { Config } from '../domain/config.js';
 import { pipelineId, taskId } from '../domain/identity.js';
 import type { RunInput } from '../domain/task.js';
 import { goalSpecSchema, issueDigest, patchDigest, validateSteps, type GoalState } from '../domain/iteration.js';
+import { handoffDigest, type AgentHandoff } from '../domain/collaboration.js';
 import { applyChanges } from '../domain/repair.js';
 import { changedPaths } from '../domain/snapshot.js';
 import { passed, preservesTests } from '../domain/test-evidence.js';
 import type { Report, Snapshot } from '../domain/types.js';
-import type { Agent } from '../ports/agent.js';
+import { roleAgent, type Agent } from '../ports/agent.js';
 import type { GitHub, IssueGitHub } from '../ports/github.js';
 import type { IterationStore } from '../ports/iteration.js';
 import type { Repository } from '../ports/repository.js';
@@ -27,6 +28,17 @@ function enabled(d: IterationDependencies) {
   return d.config.iteration;
 }
 async function save(state: GoalState, d: IterationDependencies) { state.updatedAt = new Date().toISOString(); await d.goals.save(state); }
+function syncStepStates(state: GoalState) {
+  const now = new Date().toISOString(), previous = state.stepStates ?? {};
+  state.stepStates = Object.fromEntries(state.steps.map(step => {
+    const old = previous[step.id], completed = state.completed.includes(step.id);
+    const blocked = step.dependsOn.some(id => ['rejected', 'blocked'].includes(previous[id]?.status ?? ''));
+    const status = completed ? 'completed' : state.active?.step === step.id ? 'running' : blocked ? 'blocked'
+      : old?.status === 'rejected' ? 'rejected' : 'pending';
+    return [step.id, { attempts: old?.attempts ?? 0, reportId: old?.reportId, reason: old?.reason,
+      updatedAt: old?.status === status ? old.updatedAt : now, status }];
+  }));
+}
 function goalControl(id: string, d: IterationDependencies, timeout: number) {
   const pause = new AbortController();
   const signal = AbortSignal.any([d.signal, pause.signal, AbortSignal.timeout(timeout)]);
@@ -72,13 +84,27 @@ async function reserve(state: GoalState, d: IterationDependencies) {
 }
 async function design(state: GoalState, base: Snapshot, d: IterationDependencies, signal: AbortSignal) {
   const limits = enabled(d), settle = await reserve(state, d);
+  const evidence = { goal: state.spec, maxSteps: limits.maxSteps, previousPlan: state.steps,
+    completed: state.completed, feedback: state.notes.slice(-5) };
+  const handoff: AgentHandoff = { id: handoffDigest([state.id, 'planner', evidence, state.handoffs?.length ?? 0]),
+    role: 'planner', action: 'design', status: 'running', inputDigest: handoffDigest(evidence), at: new Date().toISOString() };
+  state.handoffs ??= []; state.handoffs.push(handoff); await save(state, d);
   try {
     const memories = (await d.goals.experiences()).filter(e => e.repository === state.repository && e.sha === state.sha && e.configHash === state.configHash).slice(-5);
-    const plan = await d.agent!.design!(base, JSON.stringify({ goal: state.spec, maxSteps: limits.maxSteps,
+    const planner = roleAgent(d.agent!, 'planner');
+    if (!planner.design) throw new Error('Planner role does not support goal design.');
+    const plan = await planner.design(base, JSON.stringify({ goal: state.spec, maxSteps: limits.maxSteps,
       previousPlan: state.steps, completed: state.completed, feedback: state.notes.slice(-5), experiences: memories }), signal);
-    const steps = validateSteps(plan.steps ?? [], state.spec, limits.maxSteps);
+    handoff.status = 'completed'; handoff.outputDigest = handoffDigest(plan); handoff.summary = plan.summary.slice(0, 1000);
+    let steps;
+    try { steps = validateSteps(plan.steps ?? [], state.spec, limits.maxSteps); }
+    catch (error) { handoff.status = 'rejected'; throw error; }
     for (const id of state.completed) if (JSON.stringify(steps.find(s => s.id === id)) !== JSON.stringify(state.steps.find(s => s.id === id))) throw new Error('Replanning cannot change completed work.');
     state.steps = steps; state.status = 'planned';
+    syncStepStates(state);
+  } catch (error) {
+    if (handoff.status !== 'rejected') { handoff.status = 'failed'; handoff.summary = String(error).slice(0, 1000); }
+    throw error;
   } finally { await settle(); }
 }
 export async function createGoal(raw: unknown, d: IterationDependencies): Promise<GoalState> {
@@ -141,7 +167,7 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
         controlled.throwIfAborted();
         if (await d.goals.paused(id)) throw new Error('Goal paused.');
         const step = state.steps.find(s => !state.completed.includes(s.id) && s.dependsOn.every(p => state.completed.includes(p)));
-        if (!step) throw new Error('No executable goal step.');
+        if (!step) { syncStepStates(state); throw new Error('No executable goal step.'); }
         const criteria = state.spec.acceptance.filter(a => step.acceptanceIds.includes(a.id)).map(a => a.text);
         const previousPatches: string[] = [], priorFeedback: string[] = [];
         for (const reference of state.reports) {
@@ -161,7 +187,10 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
           const count = (criterion: string) => state.criterionAttempts && Object.hasOwn(state.criterionAttempts, criterion) ? state.criterionAttempts[criterion]! : 0;
           if (step.acceptanceIds.some(criterion => count(criterion) >= limits.maxRounds)) throw new Error('Acceptance retry limit reached.');
           state.criterionAttempts = Object.fromEntries(state.spec.acceptance.map(a => [a.id, count(a.id) + (step.acceptanceIds.includes(a.id) ? 1 : 0)]));
-          state.active = { step: step.id, runKey }; state.rounds++; await save(state, d);
+          state.active = { step: step.id, runKey }; state.rounds++;
+          syncStepStates(state);
+          const execution = state.stepStates![step.id]!; execution.attempts++; execution.updatedAt = new Date().toISOString();
+          await save(state, d);
           const settle = await reserve(state, d);
           try { report = await runPipeline(input, pipelineConfig, d.store, d.runner, d.agent, controlled); }
           finally { await settle(); }
@@ -171,6 +200,10 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
         if (!state.reports.includes(reference)) state.reports.push(reference);
         state.active = undefined;
         if (report.status !== 'verified' || !report.tests.repaired || !passed(report.tests.repaired)) {
+          syncStepStates(state);
+          Object.assign(state.stepStates![step.id]!, { status: 'rejected', reportId: report.id,
+            reason: `${report.status}: ${report.notes.slice(-3).join(' ')}`, updatedAt: new Date().toISOString() });
+          syncStepStates(state);
           state.notes.push(`Step ${step.id}: ${report.status}. ${report.notes.slice(-3).join(' ')}`);
           state.status = 'needs_attention'; await save(state, d);
           const retryableEvidence = report.status === 'needs_attention' && report.tests.repaired?.status === 'failed'
@@ -184,7 +217,10 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
         }
         working = applyChanges(working, report.changes);
         state.changes = changedPaths(base, working).map(path => ({ path, content: working.get(path)! }));
-        state.completed.push(step.id); await save(state, d);
+        state.completed.push(step.id); syncStepStates(state);
+        Object.assign(state.stepStates![step.id]!, { status: 'completed', reportId: report.id, reason: undefined,
+          updatedAt: new Date().toISOString() });
+        await save(state, d);
       }
       const final = await d.runner!.run(working, 'goal-final', controlled);
       const originals = await d.runner!.run(base, 'goal-original', controlled);

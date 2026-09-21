@@ -1,4 +1,6 @@
 import type { Config } from '../domain/config.js';
+import type { Answer } from '../domain/agent-answer.js';
+import { handoffDigest, type AgentHandoff, type AgentRole } from '../domain/collaboration.js';
 import { descriptionHash, pipelineId } from '../domain/identity.js';
 import { applyExceptions, introducedFindings, loadPolicy, partitionFindings } from '../domain/policy.js';
 import { applyChanges, isTest, semanticFindings, validatePlan } from '../domain/repair.js';
@@ -10,7 +12,7 @@ import { assessPlan } from '../domain/test-assessment.js';
 import { notRun, passed, preservesTests } from '../domain/test-evidence.js';
 import { assessStability, diagnose } from '../domain/test-diagnosis.js';
 import type { Report, Snapshot, TestResult } from '../domain/types.js';
-import { type Agent } from '../ports/agent.js';
+import { roleAgent, type Agent } from '../ports/agent.js';
 import { type Runner } from '../ports/runner.js';
 import { type Store } from '../ports/store.js';
 import { pause, RetryableError, StaleTaskError, throwIfAborted } from '../shared/control.js';
@@ -52,6 +54,20 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
   const signal = parent ? AbortSignal.any([parent, deadline.signal]) : deadline.signal;
   if (!input.keepBudget) agent?.resetBudget?.();
   const save = async () => { report.agentUsage = agent?.usage?.(); await store.save(report); };
+  const invoke = async (role: AgentRole, action: AgentHandoff['action'], evidence: unknown,
+    operation: (selected: Agent) => Promise<Answer>) => {
+    const handoff: AgentHandoff = { id: handoffDigest([id, role, action, evidence, report.handoffs?.length ?? 0]),
+      role, action, status: 'running', inputDigest: handoffDigest(evidence), at: new Date().toISOString() };
+    report.handoffs ??= []; report.handoffs.push(handoff); await save();
+    try {
+      const answer = await operation(roleAgent(agent!, role));
+      handoff.status = 'completed'; handoff.outputDigest = handoffDigest(answer);
+      handoff.summary = answer.summary.slice(0, 1000); await save();
+      return { answer, handoff };
+    } catch (error) {
+      handoff.status = 'failed'; handoff.summary = String(error).slice(0, 1000); await save(); throw error;
+    }
+  };
   const run = async (files: Snapshot, phase: string, attempt = 0): Promise<TestResult> => {
     throwIfAborted(signal);
     const limit = config.runner?.environmentAttempts ?? 2;
@@ -74,9 +90,14 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     if (policyChanged) report.notes.push('Policy changes require maintainer review; using base policy.');
     let baselineSemantic: ReturnType<typeof semanticFindings> = [];
     if (agent) {
-      baselineSemantic = semanticFindings(await agent.review(input.base, input.base, description, signal, paths), input.base, input.base, paths);
-      const current = semanticFindings(await agent.review(input.base, input.head, description, signal, paths), input.base, input.head, paths);
+      const baselineReview = await invoke('reviewer', 'review', { phase: 'baseline', base: input.baseSha, paths, descriptionHash: hash },
+        selected => selected.review(input.base, input.base, description, signal, paths));
+      baselineSemantic = semanticFindings(baselineReview.answer, input.base, input.base, paths);
+      const currentReview = await invoke('reviewer', 'review', { phase: 'candidate', base: input.baseSha, head: input.headSha, paths, descriptionHash: hash },
+        selected => selected.review(input.base, input.head, description, signal, paths));
+      const current = semanticFindings(currentReview.answer, input.base, input.head, paths);
       const semantic = partitionFindings(baselineSemantic, current, input.base, input.head);
+      if (semantic.findings.some(f => f.severity === 'error')) currentReview.handoff.status = 'rejected';
       report.findings.push(...semantic.findings); report.historical.push(...semantic.historical); report.semantic = 'completed';
     }
     Object.assign(report, applyExceptions(report.findings, policy));
@@ -85,15 +106,23 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     const issueBaseline = !(input.issue || implementing) || (passed(red) && preservesTests(baseline, red) && preservesTests(red, baseline));
     let eligible = passed(baseline) && issueBaseline;
     if (agent && runner && !policyChanged && issueBaseline && passed(baseline) && ['passed', 'failed'].includes(red.status)) {
-      report.plan = validatePlan(await agent.plan(input.base, input.head, description, signal, input.implementation?.mode), input.head, description);
+      const planned = await invoke('tester', 'test_plan', { base: input.baseSha, head: input.headSha,
+        descriptionHash: hash, intent: input.implementation?.mode },
+      selected => selected.plan(input.base, input.head, description, signal, input.implementation?.mode));
+      try { report.plan = validatePlan(planned.answer, input.head, description); }
+      catch (error) { planned.handoff.status = 'rejected'; throw error; }
       if (input.implementation) {
         const spec = input.implementation;
         if (report.plan.tests.some(t => !withinScope(t.path, spec.allowedPaths))
           || report.plan.scenarios.some(s => s.kind !== (spec.mode === 'feature' ? 'new_behavior' : 'regression') || !s.requirementQuote || !spec.acceptance.includes(s.requirementQuote))
-          || spec.acceptance.some(text => !report.plan!.scenarios.some(s => s.requirementQuote === text))) throw new Error('Implementation tests must cover every acceptance criterion verbatim within the allowed paths.');
+          || spec.acceptance.some(text => !report.plan!.scenarios.some(s => s.requirementQuote === text))) {
+          planned.handoff.status = 'rejected'; throw new Error('Implementation tests must cover every acceptance criterion verbatim within the allowed paths.');
+        }
       }
       if (input.issue && report.plan.scenarios.some(s => s.kind !== 'regression' || !s.requirementQuote || s.requirementQuote.trim().length < 8
-        || !description.includes(s.requirementQuote))) throw new Error('Issue reproduction requires regression scenarios with exact Issue requirement quotes.');
+        || !description.includes(s.requirementQuote))) {
+        planned.handoff.status = 'rejected'; throw new Error('Issue reproduction requires regression scenarios with exact Issue requirement quotes.');
+      }
       working = applyChanges(input.head, report.plan.tests);
       baseline = await run(applyChanges(input.base, report.plan.tests), 'planned-base');
       red = await run(working, 'planned-head');
@@ -121,9 +150,12 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
     report.status = !report.findings.length && passed(red) && eligible && preservedBase && !policyChanged ? 'passed' : 'needs_attention';
     if (implementing && agent && report.status === 'passed' && report.plan) {
       const checks = applyExceptions(introducedFindings(input.base, working, policy).findings, policy);
-      const reviewed = semanticFindings(await agent.review(input.base, working, description, signal), input.base, working);
+      const reviewedAnswer = await invoke('reviewer', 'review', { phase: 'acceptance-only', base: input.baseSha,
+        changes: changedPaths(input.base, working) }, selected => selected.review(input.base, working, description, signal));
+      const reviewed = semanticFindings(reviewedAnswer.answer, input.base, working);
       const semantic = partitionFindings(baselineSemantic, reviewed, input.base, working);
       if (checks.findings.some(f => f.severity === 'error') || applyExceptions(semantic.findings, policy).findings.some(f => f.severity === 'error')) {
+        reviewedAnswer.handoff.status = 'rejected';
         report.status = 'needs_attention'; report.notes.push('Acceptance tests pass, but generated changes require policy review.');
       } else {
         report.status = 'verified'; report.tests.repaired = red; report.changes = report.plan.tests;
@@ -140,12 +172,15 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
         const attempted = new Set<string>(input.previousPatches);
         for (let attempt = 1; attempt <= config.agent.maxAttempts; attempt++) {
           throwIfAborted(signal); report.attempts = attempt;
-          const answer = await agent.repair(input.base, working, JSON.stringify({ description,
-            findings: report.findings, failedTests: red, plan: report.plan, previousAttempt: feedback }), signal, input.implementation?.mode);
+          const repaired = await invoke('developer', 'repair', { attempt, base: input.baseSha, head: input.headSha,
+            findings: report.findings, failedTests: red, plan: report.plan, previousAttempt: feedback },
+          selected => selected.repair(input.base, working, JSON.stringify({ description,
+            findings: report.findings, failedTests: red, plan: report.plan, previousAttempt: feedback }), signal, input.implementation?.mode));
+          const answer = repaired.answer;
           const record = { number: attempt, changes: answer.changes, summary: answer.summary, accepted: false, reason: '' };
           report.repairs.push(record);
           const digest = patchDigest(answer.changes);
-          if (attempted.has(digest)) { record.reason = 'Repeated patch without progress; stopped.'; report.notes.push(record.reason); break; }
+          if (attempted.has(digest)) { repaired.handoff.status = 'rejected'; record.reason = 'Repeated patch without progress; stopped.'; report.notes.push(record.reason); break; }
           attempted.add(digest);
           try {
             if (input.implementation && answer.changes.some(c => !withinScope(c.path, input.implementation!.allowedPaths))) throw new Error('Repair exceeds the goal allowed paths.');
@@ -162,15 +197,21 @@ async function executePipeline(input: RunInput, config: Config, store: Store, ru
             if (!passed(report.tests.repaired) || !preservesTests(red, report.tests.repaired)
               || !preservesTests(report.tests.head, report.tests.repaired)
               || !preservesTests(report.tests.base, report.tests.repaired)) throw new Error('Repair did not pass the same test identities.');
-            const reviewed = semanticFindings(await agent.review(input.base, candidate, description, signal),
+            const candidateReview = await invoke('reviewer', 'review', { phase: 'repair', attempt,
+              base: input.baseSha, changes: changedPaths(input.base, candidate) },
+            selected => selected.review(input.base, candidate, description, signal));
+            const reviewed = semanticFindings(candidateReview.answer,
               input.base, candidate);
             const semantic = partitionFindings(baselineSemantic, reviewed, input.base, candidate);
-            if (applyExceptions(semantic.findings, policy).findings.some(f => f.severity === 'error')) throw new Error('Repair has unresolved semantic findings.');
+            if (applyExceptions(semantic.findings, policy).findings.some(f => f.severity === 'error')) {
+              candidateReview.handoff.status = 'rejected'; throw new Error('Repair has unresolved semantic findings.');
+            }
             report.changes = changedPaths(input.head, candidate).map(path => ({ path, content: candidate.get(path)! }));
             report.status = 'verified'; record.accepted = true; break;
           } catch (error) {
             throwIfAborted(signal);
             if (error instanceof RetryableError) throw error;
+            repaired.handoff.status = 'rejected';
             feedback = JSON.stringify({ reason: String(error), result: report.tests.repaired, previousChanges: answer.changes }).slice(0, 60000); record.reason = String(error);
             report.notes.push('Attempt ' + attempt + ': ' + feedback);
           }

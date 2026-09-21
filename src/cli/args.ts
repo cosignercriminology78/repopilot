@@ -21,6 +21,7 @@ export const help = `RepoPilot ${VERSION} — local-first repository verificatio
   repopilot goals plan --spec goal.json --config config.local.json
   repopilot goals run|replan|maintain GOAL_ID --config config.local.json
   repopilot goals track GOAL_ID --config config.local.json
+  repopilot goals graph GOAL_ID --config config.local.json
   repopilot goals list|show|pause [GOAL_ID] --config config.local.json
   repopilot iterate --config config.local.json [--once]
   repopilot discover --config config.local.json [--apply --expected PREVIEW_TOKEN]
