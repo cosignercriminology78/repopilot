@@ -1,6 +1,8 @@
-# Multi-Agent collaboration (v1.5 development)
+# Multi-Agent collaboration
 
 RepoPilot can assign planning, acceptance-test design, implementation and policy review to separate Codex roles while retaining a deterministic controller and independent runner as the authority for state transitions.
+
+Role separation shipped in v1.5.0. Bounded parallel DAG execution described below is available on the development branch after that release.
 
 ## Enable role isolation
 
@@ -15,6 +17,7 @@ Add `collaboration` under `iteration`. Every role can inherit `agent.model` or o
   },
   "iteration": {
     "collaboration": {
+      "maxParallel": 2,
       "roles": {
         "planner": { "model": "PLANNER_MODEL" },
         "tester": {},
@@ -49,4 +52,10 @@ npm run dev -- goals graph GOAL_ID --config config.local.json
 
 The controller decides which DAG node may run, verifies dependencies, applies scope rules and persists transitions. The independent runner can veto every candidate. Reviewer and Tester output cannot bypass that veto, and the Coordinator never merges or deploys a PR.
 
-This development increment executes DAG nodes serially. Candidate code is isolated as immutable snapshots and executed in disposable containers. Bounded parallel scheduling and conflict-aware snapshot merging are the next v1.5 increment.
+## Bounded parallel execution
+
+Set `iteration.collaboration.maxParallel` to 2–4 to execute independent ready nodes concurrently; the default is 1. The controller reserves a full per-execution Agent budget for every node before starting the wave. Each node receives a separate Agent instance and the same immutable input snapshot. Its tests and repair stay in disposable, isolated execution environments.
+
+The controller accepts a wave only when every node has durable, passing evidence. It rejects overlapping file edits, changes outside the goal scope, protected paths and merged snapshots that violate trusted static policy. The merged candidate must then pass the independent runner and preserve the original and every branch's test identities. No partial changes are committed to the goal on conflict or failed verification.
+
+The saved batch pins its input digest, report references and budget settlement. After an interruption, complete terminal reports can be reused for merge verification without another Agent call. Missing or unfinished reports fail closed; explicitly replan to request new bounded executions. `goals graph` shows the active batch and node states.

@@ -6,6 +6,7 @@ export type AgentRole = z.infer<typeof agentRoleSchema>;
 
 const roleConfig = z.object({ model: z.string().min(1).optional() }).strict();
 export const collaborationSchema = z.object({
+  maxParallel: z.number().int().min(1).max(4).default(1),
   roles: z.object({
     planner: roleConfig.default({}), tester: roleConfig.default({}),
     developer: roleConfig.default({}), reviewer: roleConfig.default({})

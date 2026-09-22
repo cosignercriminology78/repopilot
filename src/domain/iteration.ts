@@ -56,6 +56,8 @@ export interface GoalState {
   activeSince?: string;
   queued?: boolean;
   active?: { step: string; runKey: string }; notes: string[];
+  parallelBatch?: { baseDigest: string; priorReports: string[];
+    steps: { id: string; runKey: string; settled: boolean; reportId?: string }[] };
   criterionAttempts?: Record<string, number>;
   publication?: string; pullRequestUrl?: string;
   maintenance?: { reportId: string; digest: string; consumed: string[]; head?: string; base?: string;

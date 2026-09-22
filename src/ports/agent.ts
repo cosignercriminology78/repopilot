@@ -10,6 +10,7 @@ export interface Agent {
   resetBudget?(): void;
   usage?(): { calls: number; tokens: number; complete?: boolean };
   forRole?(role: AgentRole): Agent;
+  forkExecution?(): Agent;
 }
 
 export function roleAgent(agent: Agent, role: AgentRole): Agent {

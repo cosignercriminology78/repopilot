@@ -97,6 +97,8 @@ npm run dev -- goals maintain GOAL_ID --config config.local.json
 
 **1.5.0** 同时新增[多智能体协作](docs/MULTI-AGENT-COLLABORATION.md)：Planner、Tester、Developer、Reviewer 使用独立 Codex 角色，共享有上限的预算，保留可恢复的角色交接和任务 DAG 状态；最终状态仍由确定性控制器与独立测试执行器决定。
 
+1.5.0 之后的开发版本新增可选的 DAG 独立节点受控并行、文件级冲突检测，以及合并候选的独立累积验证。
+
 - GitHub 轮询和本地提交比较；任务固定 base/head SHA、PR 标题及描述摘要。
 - 从 base 读取规则，支持嵌套 AGENTS.md、静态文本规则、JS/TS AST 调用规则、规则冲突检查、历史问题去重及带有效期的规则豁免。
 - 语义结论必须引用可信规范原文和对应代码证据。

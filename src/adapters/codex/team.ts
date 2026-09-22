@@ -8,8 +8,8 @@ import { DockerCodexAgent, SharedAgentBudget } from './docker-agent.js';
 export class CodexAgentTeam implements Agent {
   private agents: Record<AgentRole, DockerCodexAgent>;
   private budget: SharedAgentBudget;
-  constructor(config: Config['agent'], collaboration: NonNullable<Config['iteration']>['collaboration'], dataDir: string,
-    testEnvironment?: ReturnType<typeof describeTestEnvironment>) {
+  constructor(private config: Config['agent'], private collaboration: NonNullable<Config['iteration']>['collaboration'],
+    private dataDir: string, private testEnvironment?: ReturnType<typeof describeTestEnvironment>) {
     if (!collaboration) throw new Error('Collaboration configuration is required.');
     this.budget = new SharedAgentBudget(config.maxCalls, config.maxTokens);
     const create = (role: AgentRole) => new DockerCodexAgent(
@@ -18,6 +18,7 @@ export class CodexAgentTeam implements Agent {
       developer: create('developer'), reviewer: create('reviewer') };
   }
   forRole(role: AgentRole): Agent { return this.agents[role]; }
+  forkExecution(): Agent { return new CodexAgentTeam(this.config, this.collaboration, this.dataDir, this.testEnvironment); }
   resetBudget() { this.budget.reset(); }
   usage() { return this.budget.usage(); }
   design(...args: Parameters<NonNullable<Agent['design']>>) { return this.agents.planner.design(...args); }

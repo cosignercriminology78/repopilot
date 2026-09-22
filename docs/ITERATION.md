@@ -53,7 +53,7 @@ Add the following `iteration` section to a trusted controller configuration with
 }
 ```
 
-The JSON above is a configuration fragment, not a complete configuration. Queue, maintenance and post-merge tracking are optional and disabled when absent. `maxRounds` bounds attempts per acceptance criterion, including after replanning; model and elapsed-time budgets cover the whole goal. One controller executes serially per data directory, preventing concurrent mutation of its goals and publication state.
+The JSON above is a configuration fragment, not a complete configuration. Queue, maintenance and post-merge tracking are optional and disabled when absent. `maxRounds` bounds attempts per acceptance criterion, including after replanning; model and elapsed-time budgets cover the whole goal. One controller owns the data directory and serializes state and publication writes. The development branch after v1.5.0 can execute independent ready DAG nodes concurrently when `iteration.collaboration.maxParallel` is explicitly greater than 1; see [multi-Agent collaboration](MULTI-AGENT-COLLABORATION.md).
 
 ```sh
 npm run dev -- iterate --once --config config.local.json

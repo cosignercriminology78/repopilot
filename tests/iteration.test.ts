@@ -45,6 +45,139 @@ async function fixture(): Promise<IterationDependencies> {
         .map(id => ({ path: `src/${id}.ts`, content: 'GOOD' }))) }
   };
 }
+async function parallelFixture() {
+  const d = await fixture();
+  d.config.iteration!.collaboration = configSchema.parse({ repository: 'owner/repo',
+    iteration: { collaboration: { maxParallel: 2 } } }).iteration!.collaboration;
+  const independent = [{ ...steps[0]!, dependsOn: [] }, { ...steps[1]!, dependsOn: [] }];
+  const core = d.agent!;
+  core.design = async () => ({ ...answer(), steps: independent });
+  let calls = 0;
+  core.forkExecution = () => ({
+    review: async (...args) => { calls++; return core.review(...args); },
+    plan: async (...args) => { calls++; return core.plan(...args); },
+    repair: async (...args) => { calls++; return core.repair(...args); },
+    usage: () => ({ calls: 4, tokens: 40 }),
+    resetBudget: () => {}
+  });
+  return { d, calls: () => calls };
+}
+
+test('independent DAG nodes execute concurrently and merge only after cumulative tests pass', async () => {
+  const { d } = await parallelFixture();
+  const core = d.agent!, plan = core.plan;
+  let waiting = 0, release!: () => void;
+  const bothStarted = new Promise<void>(resolve => { release = resolve; });
+  core.plan = async (...args) => {
+    if (++waiting === 2) release();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([bothStarted, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Independent nodes did not run concurrently.')), 3000);
+      })]);
+    } finally { if (timer) clearTimeout(timer); }
+    return plan(...args);
+  };
+  const phases: string[] = [], runner = d.runner!;
+  d.runner = { run: async (files, phase, signal) => { phases.push(phase); return runner.run(files, phase, signal); } };
+  const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
+  assert.equal(finished.status, 'verified', finished.notes.join('\n'));
+  assert.deepEqual(finished.completed, ['negative', 'zero']);
+  assert.equal(waiting, 2);
+  assert.ok(phases.includes('goal-merge-base') && phases.includes('goal-merge'));
+  assert.equal(finished.parallelBatch, undefined);
+  assert.equal(finished.reports.length, 2);
+});
+
+test('parallel nodes that edit one file reject the batch without accepting partial changes', async () => {
+  const { d } = await parallelFixture();
+  d.agent!.repair = async () => answer([{ path: 'src/shared.ts', content: 'GOOD' }]);
+  d.runner = { run: async files => {
+    const cases = [testCase()];
+    for (const id of ['negative', 'zero']) if (files.has(`test/${id}.test.js`))
+      cases.push(testCase(`test/${id}.test.js`, files.get('src/shared.ts') === 'GOOD' ? 'passed' : 'failed'));
+    return result(cases.some(item => item.status === 'failed') ? 'failed' : 'passed', cases);
+  } };
+  const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
+  assert.equal(finished.status, 'needs_attention');
+  assert.deepEqual(finished.completed, []);
+  assert.deepEqual(finished.changes, []);
+  assert.match(finished.notes.join('\n'), /Parallel merge conflict on src\/shared.ts/);
+  assert.deepEqual(Object.values(finished.stepStates ?? {}).map(step => step.status), ['rejected', 'rejected']);
+});
+
+test('parallel merge cannot promote individually verified branches when their combined tests fail', async () => {
+  const { d } = await parallelFixture(), runner = d.runner!;
+  d.runner = { run: async (files, phase, signal) => {
+    const evidence = await runner.run(files, phase, signal);
+    return phase === 'goal-merge' ? result('failed', evidence.cases.map((item, index) =>
+      index === 1 ? { ...item, status: 'failed' as const, failure: 'combined regression' } : item)) : evidence;
+  } };
+  const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
+  assert.equal(finished.status, 'needs_attention');
+  assert.deepEqual(finished.completed, []);
+  assert.deepEqual(finished.changes, []);
+  assert.match(finished.notes.join('\n'), /Parallel merge failed cumulative verification/);
+});
+
+test('parallel merge resumes from durable verified branches without repeating Agent calls', async () => {
+  const { d, calls } = await parallelFixture(), runner = d.runner!;
+  let interrupt = true;
+  d.runner = { run: async (files, phase, signal) => {
+    if (phase === 'goal-merge' && interrupt) { interrupt = false; throw new Error('Merge runner interrupted'); }
+    return runner.run(files, phase, signal);
+  } };
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'needs_attention');
+  assert.equal(first.parallelBatch?.steps.every(step => step.settled), true);
+  const before = calls(), resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'verified', resumed.notes.join('\n'));
+  assert.equal(calls(), before);
+  assert.equal(resumed.rounds, first.rounds);
+  assert.deepEqual(resumed.completed, ['negative', 'zero']);
+});
+
+test('parallel recovery refuses missing branch evidence without spending another Agent budget', async () => {
+  const { d, calls } = await parallelFixture(), runner = d.runner!;
+  let interrupt = true;
+  d.runner = { run: async (files, phase, signal) => {
+    if (phase === 'goal-merge' && interrupt) { interrupt = false; throw new Error('Merge runner interrupted'); }
+    return runner.run(files, phase, signal);
+  } };
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'needs_attention');
+  const missing = first.reports[0]!.split(':')[1]!, read = d.store.read.bind(d.store);
+  d.store.read = async id => id === missing ? undefined : read(id);
+  const before = calls(), resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'needs_attention');
+  assert.equal(calls(), before);
+  assert.equal(resumed.calls, first.calls);
+  assert.deepEqual(resumed.completed, []);
+  assert.deepEqual(resumed.changes, []);
+  assert.match(resumed.notes.join('\n'), /Interrupted parallel batch lacks terminal evidence/);
+});
+
+test('parallel recovery rechecks saved candidate scope before merging', async () => {
+  const { d, calls } = await parallelFixture(), runner = d.runner!;
+  let interrupt = true;
+  d.runner = { run: async (files, phase, signal) => {
+    if (phase === 'goal-merge' && interrupt) { interrupt = false; throw new Error('Merge runner interrupted'); }
+    return runner.run(files, phase, signal);
+  } };
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'needs_attention');
+  const changed = first.reports[0]!.split(':')[1]!, read = d.store.read.bind(d.store);
+  d.store.read = async id => {
+    const report = await read(id);
+    return id === changed && report ? { ...report, changes: [{ path: 'outside/file.ts', content: 'UNVERIFIED' }] } : report;
+  };
+  const before = calls(), resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'needs_attention');
+  assert.equal(calls(), before);
+  assert.deepEqual(resumed.completed, []);
+  assert.deepEqual(resumed.changes, []);
+  assert.match(resumed.notes.join('\n'), /exceeds the goal allowed paths/);
+});
 
 test('goal plans must cover each criterion once with ordered dependencies and bounded scope', () => {
   assert.deepEqual(validateSteps(steps, spec, 2), steps);

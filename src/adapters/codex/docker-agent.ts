@@ -43,6 +43,7 @@ export class DockerCodexAgent implements Agent {
   }
   resetBudget() { this.budget.reset(); }
   usage() { return this.budget.usage(); }
+  forkExecution(): Agent { return new DockerCodexAgent(this.config, this.dataDir, this.testEnvironment, undefined, this.assignedRole); }
   design(base: Snapshot, context: string, signal?: AbortSignal) { return this.call('roadmap', base, base, context, signal); }
   review(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, paths?: string[]) { return this.call('review', base, head, description, signal, paths); }
   plan(base: Snapshot, head: Snapshot, description: string, signal?: AbortSignal, intent?: 'feature' | 'bugfix') { return this.call('plan', base, head, description, signal, undefined, intent); }

@@ -72,6 +72,8 @@ test('collaboration role configuration is strict and inherits role defaults', ()
     roles: { planner: { model: 'planning-model' }, tester: {}, developer: {}, reviewer: { model: 'review-model' } }
   } } });
   assert.equal(config.iteration?.collaboration?.roles.planner.model, 'planning-model');
+  assert.equal(config.iteration?.collaboration?.maxParallel, 1);
   assert.equal(config.iteration?.collaboration?.roles.tester.model, undefined);
   assert.throws(() => configSchema.parse({ repository: 'owner/repo', iteration: { collaboration: { unsafe: true } } }));
+  assert.throws(() => configSchema.parse({ repository: 'owner/repo', iteration: { collaboration: { maxParallel: 5 } } }));
 });
