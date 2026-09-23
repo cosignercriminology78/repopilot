@@ -58,6 +58,7 @@ export async function inspectGoals(command: string, action: string | undefined, 
     steps: state.steps.map(step => ({ ...step, execution: state.stepStates?.[step.id] ?? {
       status: state.completed.includes(step.id) ? 'completed' : 'pending', attempts: 0, updatedAt: state.updatedAt } })),
     parallelBatch: state.parallelBatch,
+    serialReplay: state.serialReplay ?? [], waveHistory: state.waveHistory ?? [],
     handoffs: state.handoffs ?? [] });
   else emit(output, { ...state, pauseRequested: await goals.paused(id!) });
   return true;

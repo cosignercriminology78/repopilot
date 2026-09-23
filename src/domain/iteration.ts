@@ -21,6 +21,14 @@ export const goalStepSchema = z.object({
   dependsOn: z.array(id).max(20)
 }).strict();
 export type GoalStep = z.infer<typeof goalStepSchema>;
+export interface WaveAudit {
+  id: string; inputDigest: string; stepIds: string[]; capacity: number;
+  status: 'running' | 'merged' | 'partial' | 'failed' | 'interrupted';
+  accepted: string[]; deferred: string[]; rejected: string[];
+  conflicts: { path: string; owner: string; deferred: string }[];
+  pathOwners: Record<string, string>; reportIds: Record<string, string>;
+  reason?: string; updatedAt: string;
+}
 export const iterationSchema = z.object({
   maxSteps: z.number().int().min(1).max(20).default(8),
   maxRounds: z.number().int().min(1).max(20).default(3),
@@ -56,8 +64,10 @@ export interface GoalState {
   activeSince?: string;
   queued?: boolean;
   active?: { step: string; runKey: string }; notes: string[];
-  parallelBatch?: { baseDigest: string; priorReports: string[];
+  parallelBatch?: { id?: string; baseDigest: string; priorReports: string[];
     steps: { id: string; runKey: string; settled: boolean; reportId?: string }[] };
+  waveHistory?: WaveAudit[];
+  serialReplay?: string[];
   criterionAttempts?: Record<string, number>;
   publication?: string; pullRequestUrl?: string;
   maintenance?: { reportId: string; digest: string; consumed: string[]; head?: string; base?: string;

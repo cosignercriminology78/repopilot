@@ -6,7 +6,9 @@ import { FileIterationStore } from '../src/adapters/storage/iteration-store.js';
 import { createGoal, runGoal, type IterationDependencies } from '../src/application/iteration.js';
 import { configSchema } from '../src/domain/config.js';
 import { goalSpecSchema, validateSteps, withinScope, type GoalStep } from '../src/domain/iteration.js';
+import { parallelCapacity, partitionParallelBranches } from '../src/domain/parallel-scheduling.js';
 import type { Runner } from '../src/ports/runner.js';
+import { RetryableError } from '../src/shared/control.js';
 import { answer, result, store, testCase } from './helpers.js';
 
 const spec = goalSpecSchema.parse({ title: 'Implement quantity validation', objective: 'Reject invalid quantities before creating an order.', mode: 'feature',
@@ -87,9 +89,11 @@ test('independent DAG nodes execute concurrently and merge only after cumulative
   assert.ok(phases.includes('goal-merge-base') && phases.includes('goal-merge'));
   assert.equal(finished.parallelBatch, undefined);
   assert.equal(finished.reports.length, 2);
+  assert.equal(finished.waveHistory?.[0]?.status, 'merged');
+  assert.deepEqual(finished.waveHistory?.[0]?.accepted, ['negative', 'zero']);
 });
 
-test('parallel nodes that edit one file reject the batch without accepting partial changes', async () => {
+test('parallel file conflicts replay the later node on the verified updated snapshot', async () => {
   const { d } = await parallelFixture();
   d.agent!.repair = async () => answer([{ path: 'src/shared.ts', content: 'GOOD' }]);
   d.runner = { run: async files => {
@@ -99,11 +103,138 @@ test('parallel nodes that edit one file reject the batch without accepting parti
     return result(cases.some(item => item.status === 'failed') ? 'failed' : 'passed', cases);
   } };
   const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
-  assert.equal(finished.status, 'needs_attention');
-  assert.deepEqual(finished.completed, []);
-  assert.deepEqual(finished.changes, []);
-  assert.match(finished.notes.join('\n'), /Parallel merge conflict on src\/shared.ts/);
-  assert.deepEqual(Object.values(finished.stepStates ?? {}).map(step => step.status), ['rejected', 'rejected']);
+  assert.equal(finished.status, 'verified', finished.notes.join('\n'));
+  assert.deepEqual(finished.completed, ['negative', 'zero']);
+  assert.deepEqual([finished.stepStates?.negative?.attempts, finished.stepStates?.zero?.attempts], [1, 2]);
+  assert.equal(finished.reports.length, 3);
+  assert.equal(finished.waveHistory?.[0]?.status, 'partial');
+  assert.deepEqual(finished.waveHistory?.[0]?.accepted, ['negative']);
+  assert.deepEqual(finished.waveHistory?.[0]?.deferred, ['zero']);
+  assert.deepEqual(finished.waveHistory?.[0]?.conflicts, [{ path: 'src/shared.ts', owner: 'negative', deferred: 'zero' }]);
+  assert.deepEqual(finished.serialReplay, []);
+});
+
+test('paused conflict replay resumes from the accepted snapshot without repeating the wave', async () => {
+  const { d } = await parallelFixture();
+  d.agent!.repair = async () => answer([{ path: 'src/shared.ts', content: 'GOOD' }]);
+  d.runner = { run: async (files, phase) => {
+    const cases = [testCase()];
+    for (const id of ['negative', 'zero']) if (files.has(`test/${id}.test.js`))
+      cases.push(testCase(`test/${id}.test.js`, files.get('src/shared.ts') === 'GOOD' ? 'passed' : 'failed'));
+    const evidence = result(cases.some(item => item.status === 'failed') ? 'failed' : 'passed', cases);
+    if (phase === 'goal-merge') await d.goals.pause(created.id);
+    return evidence;
+  } };
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'paused');
+  assert.deepEqual(first.completed, ['negative']);
+  assert.deepEqual(first.serialReplay, ['zero']);
+  assert.equal(first.waveHistory?.length, 1);
+  const resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'verified', resumed.notes.join('\n'));
+  assert.deepEqual(resumed.completed, ['negative', 'zero']);
+  assert.equal(resumed.waveHistory?.length, 1);
+  assert.equal(resumed.rounds, first.rounds + 1);
+  assert.equal(resumed.stepStates?.negative?.attempts, 1);
+});
+
+test('parallel resource budget reduces worker capacity without losing DAG progress', async () => {
+  const { d } = await parallelFixture();
+  d.config.iteration!.collaboration!.resourceBudget = { cpus: 4, memoryMiB: 3072 };
+  assert.equal(parallelCapacity(d.config.iteration!.collaboration, undefined), 1);
+  const serviceRunner = configSchema.parse({ repository: 'owner/repo', runner: { command: ['node', '--test'],
+    services: [{ name: 'db', image: 'postgres:16', readiness: { command: ['true'] } }] } }).runner!;
+  assert.equal(parallelCapacity({ ...d.config.iteration!.collaboration!, resourceBudget: { cpus: 8, memoryMiB: 6144 } }, serviceRunner), 1);
+  assert.throws(() => parallelCapacity({ ...d.config.iteration!.collaboration!, resourceBudget: { cpus: 3, memoryMiB: 3072 } }, undefined),
+    /cannot accommodate one node/);
+  const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
+  assert.equal(finished.status, 'verified', finished.notes.join('\n'));
+  assert.deepEqual(finished.completed, ['negative', 'zero']);
+  assert.equal(finished.waveHistory, undefined);
+});
+
+test('parallel branch partition keeps deterministic owners and defers only overlapping edits', () => {
+  const base = new Map([['src/a.ts', 'old'], ['src/b.ts', 'old']]);
+  const decision = partitionParallelBranches(base, [
+    { step: 'one', changes: [{ path: 'src/a.ts', content: 'new' }] },
+    { step: 'two', changes: [{ path: 'src/a.ts', content: 'new' }] },
+    { step: 'three', changes: [{ path: 'src/b.ts', content: 'new' }] }
+  ]);
+  assert.deepEqual(decision.accepted.map(branch => branch.step), ['one', 'three']);
+  assert.deepEqual(decision.deferred, ['two']);
+  assert.deepEqual(decision.pathOwners, { 'src/a.ts': 'one', 'src/b.ts': 'three' });
+});
+
+test('parallel failure keeps independently verified sibling and blocks final publication', async () => {
+  const { d } = await parallelFixture(), repair = d.agent!.repair;
+  d.agent!.repair = async (base, head, prompt, signal) => head.has('test/zero.test.js')
+    ? answer([]) : repair(base, head, prompt, signal);
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'needs_attention');
+  assert.deepEqual(first.completed, ['negative']);
+  assert.equal(first.stepStates?.negative?.status, 'completed');
+  assert.equal(first.stepStates?.zero?.status, 'rejected');
+  assert.equal(first.publication, undefined);
+  assert.equal(first.waveHistory?.[0]?.status, 'partial');
+  assert.deepEqual(first.waveHistory?.[0]?.rejected, ['zero']);
+  d.agent!.repair = repair;
+  const resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'verified', resumed.notes.join('\n'));
+  assert.deepEqual(resumed.completed, ['negative', 'zero']);
+});
+
+test('retryable parallel transport failure replays only the failed step within the goal budget', async () => {
+  const { d } = await parallelFixture(), review = d.agent!.review;
+  d.config.retry.baseDelayMs = 0;
+  let failures = 0;
+  d.agent!.review = async (...args) => {
+    if (args[2].includes('Zero quantities') && failures === 0) {
+      failures++; throw new RetryableError('temporary Codex transport');
+    }
+    return review(...args);
+  };
+  const created = await createGoal(spec, d), finished = await runGoal(created.id, d);
+  assert.equal(finished.status, 'verified', finished.notes.join('\n'));
+  assert.equal(failures, 1);
+  assert.deepEqual(finished.completed, ['negative', 'zero']);
+  assert.deepEqual([finished.stepStates?.negative?.attempts, finished.stepStates?.zero?.attempts], [1, 2]);
+  assert.equal(finished.rounds, 3);
+  assert.equal(finished.waveHistory?.[0]?.status, 'partial');
+  assert.deepEqual(finished.waveHistory?.[0]?.rejected, ['zero']);
+});
+
+test('parallel retry limit stops repeated transport failures without publication', async () => {
+  const { d, calls } = await parallelFixture();
+  d.config.iteration!.maxRounds = 2;
+  d.config.retry.baseDelayMs = 0;
+  const review = d.agent!.review;
+  d.agent!.review = async (...args) => args[2].includes('Zero quantities')
+    ? Promise.reject(new RetryableError('persistent Codex transport')) : review(...args);
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'needs_attention');
+  assert.deepEqual(first.completed, ['negative']);
+  assert.equal(first.stepStates?.zero?.attempts, 2);
+  assert.equal(first.publication, undefined);
+  const before = calls(), resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'needs_attention');
+  assert.equal(calls(), before);
+  assert.equal(resumed.rounds, first.rounds);
+});
+
+test('future retry window leaves replay durable without spending a premature execution', async () => {
+  const { d, calls } = await parallelFixture(), review = d.agent!.review;
+  d.agent!.review = async (...args) => args[2].includes('Zero quantities')
+    ? Promise.reject(new RetryableError('Codex unavailable', 60000)) : review(...args);
+  const created = await createGoal(spec, d), first = await runGoal(created.id, d);
+  assert.equal(first.status, 'needs_attention');
+  assert.deepEqual(first.completed, ['negative']);
+  assert.deepEqual(first.serialReplay, ['zero']);
+  assert.equal(first.rounds, 2);
+  const before = calls(), resumed = await runGoal(created.id, d);
+  assert.equal(resumed.status, 'needs_attention');
+  assert.equal(calls(), before);
+  assert.equal(resumed.rounds, first.rounds);
+  assert.deepEqual(resumed.serialReplay, ['zero']);
 });
 
 test('parallel merge cannot promote individually verified branches when their combined tests fail', async () => {
@@ -135,6 +266,8 @@ test('parallel merge resumes from durable verified branches without repeating Ag
   assert.equal(calls(), before);
   assert.equal(resumed.rounds, first.rounds);
   assert.deepEqual(resumed.completed, ['negative', 'zero']);
+  assert.equal(resumed.waveHistory?.length, 1);
+  assert.equal(resumed.waveHistory?.[0]?.status, 'merged');
 });
 
 test('parallel recovery refuses missing branch evidence without spending another Agent budget', async () => {
@@ -155,6 +288,7 @@ test('parallel recovery refuses missing branch evidence without spending another
   assert.deepEqual(resumed.completed, []);
   assert.deepEqual(resumed.changes, []);
   assert.match(resumed.notes.join('\n'), /Interrupted parallel batch lacks terminal evidence/);
+  assert.equal(resumed.waveHistory?.[0]?.status, 'interrupted');
 });
 
 test('parallel recovery rechecks saved candidate scope before merging', async () => {

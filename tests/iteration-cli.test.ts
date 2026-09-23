@@ -33,6 +33,8 @@ test('goal inspection and pause work under a controller lock and enforce reposit
     assert.equal(JSON.parse(lines.at(-1)!).configHash, 'old-config');
     assert.equal(await main(['goals', 'graph', id, '--config', config], output), 0);
     assert.deepEqual(JSON.parse(lines.at(-1)!).steps, []);
+    assert.deepEqual(JSON.parse(lines.at(-1)!).waveHistory, []);
+    assert.deepEqual(JSON.parse(lines.at(-1)!).serialReplay, []);
     assert.equal(await main(['goals', 'pause', id, '--config', config], output), 0);
     assert.equal(await goals.paused(id), true);
     assert.equal((await goals.read(id))!.status, 'planned');

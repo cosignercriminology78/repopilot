@@ -3,12 +3,13 @@ import { randomUUID } from 'node:crypto';
 import type { Config } from '../domain/config.js';
 import { pipelineId, taskId } from '../domain/identity.js';
 import type { RunInput } from '../domain/task.js';
-import { goalSpecSchema, issueDigest, patchDigest, validateSteps, withinScope, type GoalState } from '../domain/iteration.js';
+import { goalSpecSchema, issueDigest, patchDigest, validateSteps, withinScope, type GoalState, type WaveAudit } from '../domain/iteration.js';
 import { handoffDigest, type AgentHandoff } from '../domain/collaboration.js';
 import { applyExceptions, introducedFindings, loadPolicy } from '../domain/policy.js';
 import { applyChanges } from '../domain/repair.js';
 import { changedPaths, copySnapshot } from '../domain/snapshot.js';
 import { mergeParallelChanges, snapshotDigest } from '../domain/parallel-merge.js';
+import { parallelCapacity, partitionParallelBranches } from '../domain/parallel-scheduling.js';
 import { passed, preservesTests } from '../domain/test-evidence.js';
 import type { Report, Snapshot } from '../domain/types.js';
 import { roleAgent, type Agent } from '../ports/agent.js';
@@ -17,7 +18,7 @@ import type { IterationStore } from '../ports/iteration.js';
 import type { Repository } from '../ports/repository.js';
 import type { Runner } from '../ports/runner.js';
 import type { Store } from '../ports/store.js';
-import { StaleTaskError, withFreshness } from '../shared/control.js';
+import { pause, StaleTaskError, withFreshness } from '../shared/control.js';
 import { runPipeline } from './pipeline.js';
 import { finishReport } from './publication.js';
 
@@ -30,6 +31,21 @@ function enabled(d: IterationDependencies) {
   return d.config.iteration;
 }
 async function save(state: GoalState, d: IterationDependencies) { state.updatedAt = new Date().toISOString(); await d.goals.save(state); }
+function waveAudit(state: GoalState, capacity: number): WaveAudit {
+  const batch = state.parallelBatch!;
+  const id = batch.id ?? taskId([state.id, batch.baseDigest, batch.steps.map(step => step.runKey)]);
+  batch.id = id;
+  state.waveHistory ??= [];
+  let audit = state.waveHistory.find(item => item.id === id);
+  if (!audit) {
+    audit = { id, inputDigest: batch.baseDigest, stepIds: batch.steps.map(step => step.id), capacity,
+      status: 'running', accepted: [], deferred: [], rejected: [], conflicts: [], pathOwners: {}, reportIds: {},
+      updatedAt: new Date().toISOString() };
+    state.waveHistory.push(audit);
+    if (state.waveHistory.length > 400) state.waveHistory.shift();
+  }
+  return audit;
+}
 function syncStepStates(state: GoalState) {
   const now = new Date().toISOString(), previous = state.stepStates ?? {};
   state.stepStates = Object.fromEntries(state.steps.map(step => {
@@ -58,8 +74,17 @@ async function parallelStepInput(state: GoalState, step: GoalState['steps'][numb
     description: `${state.spec.mode === 'feature' ? 'Feature implementation' : 'Bug reproduction'}: ${state.spec.objective}\nStep: ${step.title}\nAcceptance:\n${criteria.join('\n')}\nAllowed paths: ${state.spec.allowedPaths.join(', ')}\nPrevious verification feedback (untrusted evidence): ${priorFeedback.join('\n').slice(-12000)}`,
     previousPatches, implementation: { mode: state.spec.mode, acceptance: criteria, allowedPaths: state.spec.allowedPaths } };
 }
+function retryableParallelStep(state: GoalState, step: GoalState['steps'][number], report: Report | undefined,
+  limits: NonNullable<IterationDependencies['config']['iteration']>): boolean {
+  if (!report || step.acceptanceIds.some(id => (state.criterionAttempts?.[id] ?? 0) >= limits.maxRounds)) return false;
+  if (state.rounds >= limits.maxRounds * limits.maxSteps) return false;
+  if (report.status === 'error') return report.retryable;
+  return report.status === 'needs_attention' && report.tests.repaired?.status === 'failed'
+    && report.tests.repaired.structured && report.testStability?.status === 'stable'
+    && !report.repairs.some(repair => repair.reason?.includes('Repeated patch'));
+}
 async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot, d: IterationDependencies, signal: AbortSignal): Promise<Snapshot | undefined> {
-  const limits = enabled(d), maxParallel = limits.collaboration?.maxParallel ?? 1;
+  const limits = enabled(d), maxParallel = parallelCapacity(limits.collaboration, d.config.runner);
   if (!d.agent?.forkExecution) throw new Error('Parallel goal execution requires isolated Agent instances.');
   const existing = state.parallelBatch, ready = state.steps.filter(step =>
     !state.completed.includes(step.id) && step.dependsOn.every(id => state.completed.includes(id)));
@@ -80,6 +105,7 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
     const batch = { baseDigest: snapshotDigest(working), priorReports: [...state.reports], steps: steps.map((step, index) => ({
       id: step.id, runKey: taskId([state.id, step, state.rounds + index, state.changes]), settled: false })) };
     state.parallelBatch = batch; state.calls += calls; state.tokens += tokens; state.rounds += steps.length;
+    waveAudit(state, maxParallel);
     state.criterionAttempts ??= {};
     for (const step of steps) for (const criterion of step.acceptanceIds)
       state.criterionAttempts[criterion] = (state.criterionAttempts[criterion] ?? 0) + 1;
@@ -91,7 +117,9 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
     await save(state, d);
   }
   const batch = state.parallelBatch!;
+  const audit = waveAudit(state, maxParallel);
   const interrupt = async (reason: string): Promise<never> => {
+    audit.status = 'interrupted'; audit.reason = reason; audit.updatedAt = new Date().toISOString();
     for (const item of batch.steps) Object.assign(state.stepStates![item.id]!, {
       status: 'blocked', reason, updatedAt: new Date().toISOString() });
     await save(state, d);
@@ -126,6 +154,7 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
     }
     if (report) {
       item.reportId = report.id;
+      audit.reportIds[item.id] = report.id;
       const reference = item.id + ':' + report.id;
       if (!state.reports.includes(reference)) state.reports.push(reference);
     }
@@ -134,23 +163,21 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
   signal.throwIfAborted();
   if (reports.some(report => !report))
     await interrupt('Parallel step ended without durable report; replan to request a new execution.');
-  if (reports.some(report => !report || report.status !== 'verified' || !report.tests.repaired || !passed(report.tests.repaired))) {
-    for (let index = 0; index < steps.length; index++) {
-      const report = reports[index], step = steps[index]!;
-      if (report?.status === 'verified') continue;
-      Object.assign(state.stepStates![step.id]!, { status: 'rejected', reportId: report?.id,
-        reason: report ? `${report.status}: ${report.notes.slice(-3).join(' ')}` : 'Missing durable report.',
-        updatedAt: new Date().toISOString() });
-    }
-    state.parallelBatch = undefined; syncStepStates(state);
-    state.status = 'needs_attention'; state.notes.push('Parallel wave failed independent verification; no candidate changes were merged.');
-    await save(state, d); return undefined;
-  }
+  const reportFor = (step: GoalState['steps'][number]) => reports[steps.indexOf(step)]!;
+  const verified = steps.filter((_, index) => reports[index]?.status === 'verified'
+    && !!reports[index]?.tests.repaired && passed(reports[index]!.tests.repaired!));
+  const rejected = steps.filter(step => !verified.includes(step));
+  const retryable = rejected.filter(step => retryableParallelStep(state, step, reportFor(step), limits));
+  const terminal = rejected.filter(step => !retryable.includes(step));
   let merged: Snapshot;
+  let partition: ReturnType<typeof partitionParallelBranches>;
   try {
-    if (reports.some(report => report!.changes.some(change => !withinScope(change.path, state.spec.allowedPaths))))
+    if (verified.some(step => reportFor(step).changes.some(change => !withinScope(change.path, state.spec.allowedPaths))))
       throw new Error('Parallel candidate exceeds the goal allowed paths.');
-    merged = mergeParallelChanges(working, steps.map((step, index) => ({ step: step.id, changes: reports[index]!.changes })));
+    partition = partitionParallelBranches(working, verified.map(step => ({ step: step.id, changes: reportFor(step).changes })));
+    audit.conflicts = partition.conflicts; audit.pathOwners = partition.pathOwners;
+    audit.deferred = partition.deferred; audit.rejected = rejected.map(step => step.id);
+    merged = partition.accepted.length ? mergeParallelChanges(working, partition.accepted) : working;
     const policy = loadPolicy(base), checks = applyExceptions(introducedFindings(base, merged, policy).findings, policy);
     if (checks.findings.some(finding => finding.severity === 'error'))
       throw new Error('Parallel merge violates trusted repository policy.');
@@ -159,7 +186,24 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
     for (const step of steps) Object.assign(state.stepStates![step.id]!, {
       status: 'rejected', reason: String(error), updatedAt: new Date().toISOString() });
     syncStepStates(state);
+    audit.status = 'failed'; audit.reason = String(error); audit.rejected = steps.map(step => step.id);
+    audit.deferred = []; audit.pathOwners = {};
+    audit.updatedAt = new Date().toISOString();
     state.status = 'needs_attention'; state.notes.push(String(error)); await save(state, d); return undefined;
+  }
+  if (!partition.accepted.length) {
+    state.parallelBatch = undefined;
+    for (const step of rejected) Object.assign(state.stepStates![step.id]!, {
+      status: 'rejected', reportId: reportFor(step).id,
+      reason: `${reportFor(step).status}: ${reportFor(step).notes.slice(-3).join(' ')}`,
+      updatedAt: new Date().toISOString() });
+    syncStepStates(state);
+    state.serialReplay = [...(state.serialReplay ?? []), ...retryable.map(step => step.id)];
+    audit.status = 'failed'; audit.reason = 'No independently verified branch.'; audit.updatedAt = new Date().toISOString();
+    if (terminal.length) {
+      state.status = 'needs_attention'; state.notes.push('Parallel wave has no independently verified branch.');
+    }
+    await save(state, d); return terminal.length ? undefined : working;
   }
   let original, combined;
   try {
@@ -171,11 +215,14 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
   }
   signal.throwIfAborted();
   if (!passed(original) || !passed(combined) || !preservesTests(original, combined)
-    || reports.some(report => !preservesTests(report!.tests.repaired!, combined))) {
+    || partition.accepted.some(branch => !preservesTests(reportFor(steps.find(step => step.id === branch.step)!).tests.repaired!, combined))) {
     state.parallelBatch = undefined;
     for (const step of steps) Object.assign(state.stepStates![step.id]!, {
       status: 'rejected', reason: 'Parallel merge failed cumulative verification.', updatedAt: new Date().toISOString() });
     syncStepStates(state);
+    audit.status = 'failed'; audit.reason = 'Parallel merge failed cumulative verification.';
+    audit.deferred = []; audit.pathOwners = {};
+    audit.rejected = steps.map(step => step.id); audit.updatedAt = new Date().toISOString();
     state.status = 'needs_attention'; state.notes.push('Parallel merge failed cumulative verification.');
     await save(state, d); return undefined;
   }
@@ -183,13 +230,28 @@ async function parallelWave(state: GoalState, base: Snapshot, working: Snapshot,
   if (!await fresh(state, d)) throw new StaleTaskError();
   state.changes = changedPaths(base, merged)
     .map(path => ({ path, content: merged.get(path)! }));
-  for (let index = 0; index < steps.length; index++) {
-    const step = steps[index]!;
+  for (const branch of partition.accepted) {
+    const step = steps.find(item => item.id === branch.step)!;
     state.completed.push(step.id);
-    Object.assign(state.stepStates![step.id]!, { status: 'completed', reportId: reports[index]!.id,
+    Object.assign(state.stepStates![step.id]!, { status: 'completed', reportId: reportFor(step).id,
       reason: undefined, updatedAt: new Date().toISOString() });
   }
-  state.parallelBatch = undefined; syncStepStates(state); await save(state, d);
+  for (const step of rejected) Object.assign(state.stepStates![step.id]!, {
+    status: 'rejected', reportId: reportFor(step).id,
+    reason: `${reportFor(step).status}: ${reportFor(step).notes.slice(-3).join(' ')}`,
+    updatedAt: new Date().toISOString() });
+  state.serialReplay = [...(state.serialReplay ?? []), ...partition.deferred, ...retryable.map(step => step.id)];
+  state.parallelBatch = undefined; syncStepStates(state);
+  audit.accepted = partition.accepted.map(branch => branch.step);
+  audit.status = rejected.length || partition.deferred.length ? 'partial' : 'merged';
+  audit.reason = rejected.length ? 'Independent branch verification failed; verified siblings retained.'
+    : partition.deferred.length ? 'Conflicting branches require execution on the updated snapshot.' : undefined;
+  audit.updatedAt = new Date().toISOString();
+  if (terminal.length) {
+    state.status = 'needs_attention'; state.notes.push(`Parallel wave isolated failed steps: ${rejected.map(step => step.id).join(', ')}.`);
+  }
+  await save(state, d);
+  if (terminal.length) return undefined;
   return merged;
 }
 function goalControl(id: string, d: IterationDependencies, timeout: number) {
@@ -253,7 +315,7 @@ async function design(state: GoalState, base: Snapshot, d: IterationDependencies
     try { steps = validateSteps(plan.steps ?? [], state.spec, limits.maxSteps); }
     catch (error) { handoff.status = 'rejected'; throw error; }
     for (const id of state.completed) if (JSON.stringify(steps.find(s => s.id === id)) !== JSON.stringify(state.steps.find(s => s.id === id))) throw new Error('Replanning cannot change completed work.');
-    state.steps = steps; state.status = 'planned';
+    state.steps = steps; state.serialReplay = undefined; state.status = 'planned';
     syncStepStates(state);
   } catch (error) {
     if (handoff.status !== 'rejected') { handoff.status = 'failed'; handoff.summary = String(error).slice(0, 1000); }
@@ -314,7 +376,7 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
     await withFreshness(async controlled => {
       const base = await snapshot(state, { ...d, signal: controlled });
       let working = state.changes.length ? applyChanges(base, state.changes) : base;
-      if (replan) { state.parallelBatch = undefined; await save(state, d); }
+      if (replan) { state.parallelBatch = undefined; state.serialReplay = undefined; await save(state, d); }
       if (replan || !state.steps.length) await design(state, working, d, controlled);
       state.status = 'running'; await save(state, d);
       while (state.completed.length < state.steps.length) {
@@ -322,13 +384,26 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
         if (await d.goals.paused(id)) throw new Error('Goal paused.');
         const ready = state.steps.filter(candidate => !state.completed.includes(candidate.id)
           && candidate.dependsOn.every(parent => state.completed.includes(parent)));
-        if (state.parallelBatch || !state.active && (limits.collaboration?.maxParallel ?? 1) > 1 && ready.length > 1) {
+        const capacity = parallelCapacity(limits.collaboration, d.config.runner);
+        if (state.parallelBatch || !state.serialReplay?.length && !state.active && capacity > 1 && ready.length > 1) {
           const merged = await parallelWave(state, base, working, d, controlled);
           if (!merged) return;
           working = merged; continue;
         }
-        const step = state.steps.find(s => !state.completed.includes(s.id) && s.dependsOn.every(p => state.completed.includes(p)));
+        const step = state.serialReplay?.length
+          ? ready.find(candidate => candidate.id === state.serialReplay![0])
+          : ready[0];
         if (!step) { syncStepStates(state); throw new Error('No executable goal step.'); }
+        if (state.serialReplay?.[0] === step.id) {
+          const previousRef = [...state.reports].reverse().find(reference => reference.startsWith(step.id + ':'));
+          const previous = previousRef ? await d.store.read(previousRef.split(':')[1]!) : undefined;
+          const wait = previous?.status === 'error' && previous.retryable ? Date.parse(previous.retryAfter ?? '') - Date.now() : 0;
+          if (Number.isFinite(wait) && wait > 30000) {
+            state.status = 'needs_attention'; state.notes.push(`Step ${step.id} retry is available after ${previous!.retryAfter}.`);
+            await save(state, d); return;
+          }
+          if (Number.isFinite(wait) && wait > 0) await pause(wait, controlled);
+        }
         const criteria = state.spec.acceptance.filter(a => step.acceptanceIds.includes(a.id)).map(a => a.text);
         const previousPatches: string[] = [], priorFeedback: string[] = [];
         for (const reference of state.reports) {
@@ -366,6 +441,7 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
             reason: `${report.status}: ${report.notes.slice(-3).join(' ')}`, updatedAt: new Date().toISOString() });
           syncStepStates(state);
           state.notes.push(`Step ${step.id}: ${report.status}. ${report.notes.slice(-3).join(' ')}`);
+          if (state.serialReplay?.[0] === step.id) state.serialReplay.shift();
           state.status = 'needs_attention'; await save(state, d);
           const retryableEvidence = report.status === 'needs_attention' && report.tests.repaired?.status === 'failed'
             && report.tests.repaired.structured && report.testStability?.status === 'stable'
@@ -379,6 +455,7 @@ export async function runGoal(id: string, d: IterationDependencies, replan = fal
         working = applyChanges(working, report.changes);
         state.changes = changedPaths(base, working).map(path => ({ path, content: working.get(path)! }));
         state.completed.push(step.id); syncStepStates(state);
+        if (state.serialReplay?.[0] === step.id) state.serialReplay.shift();
         Object.assign(state.stepStates![step.id]!, { status: 'completed', reportId: report.id, reason: undefined,
           updatedAt: new Date().toISOString() });
         await save(state, d);

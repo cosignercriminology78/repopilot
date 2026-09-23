@@ -18,6 +18,7 @@ Add `collaboration` under `iteration`. Every role can inherit `agent.model` or o
   "iteration": {
     "collaboration": {
       "maxParallel": 2,
+      "resourceBudget": { "cpus": 8, "memoryMiB": 6144 },
       "roles": {
         "planner": { "model": "PLANNER_MODEL" },
         "tester": {},
@@ -54,8 +55,12 @@ The controller decides which DAG node may run, verifies dependencies, applies sc
 
 ## Bounded parallel execution
 
-Set `iteration.collaboration.maxParallel` to 2–4 to execute independent ready nodes concurrently; the default is 1. The controller reserves a full per-execution Agent budget for every node before starting the wave. Each node receives a separate Agent instance and the same immutable input snapshot. Its tests and repair stay in disposable, isolated execution environments.
+Set `iteration.collaboration.maxParallel` to 2–4 to execute independent ready nodes concurrently; the default is 1. The optional `resourceBudget` can reduce the selected wave size. Each node conservatively reserves two CPUs and 2048 MiB for its Codex container plus the configured runner and all test services. If the budget cannot fit one node, execution stops with a configuration error. This is a scheduler admission limit; it does not measure or enforce total host usage outside RepoPilot.
 
-The controller accepts a wave only when every node has durable, passing evidence. It rejects overlapping file edits, changes outside the goal scope, protected paths and merged snapshots that violate trusted static policy. The merged candidate must then pass the independent runner and preserve the original and every branch's test identities. No partial changes are committed to the goal on conflict or failed verification.
+The controller selects currently ready DAG nodes in plan order and reserves a full per-execution Agent budget for each node before starting the wave. Each node receives a separate Agent instance and the same immutable input snapshot. Its tests and repair stay in disposable, isolated execution environments.
 
-The saved batch pins its input digest, report references and budget settlement. After an interruption, complete terminal reports can be reused for merge verification without another Agent call. Missing or unfinished reports fail closed; explicitly replan to request new bounded executions. `goals graph` shows the active batch and node states.
+Only branches with durable, passing individual evidence are eligible for acceptance. The controller rejects changes outside the goal scope, protected paths and snapshots that violate trusted static policy. In plan order, it assigns each changed path to its first verified owner. Later branches touching an owned path are discarded and run again, serially, against the updated snapshot with a fresh budget reservation. This applies even when the two proposed file contents are identical. Nonconflicting branches are merged and tested together; the independent runner must preserve original and accepted-branch test identities before any result enters the goal state.
+
+If one branch fails independently, passing siblings may still be retained after cumulative verification. A terminal failure stops the goal before publication; a stable test failure or retryable transport error may be replayed within the existing per-criterion, model and time limits. A failed cumulative merge accepts none of its branches. Final verification still requires every goal step and its tests to pass before a draft PR can be proposed.
+
+The saved batch pins its input digest, report references and budget settlement. After an interruption, complete terminal reports can be reused for merge verification without another Agent call. Missing or unfinished reports fail closed; explicitly replan to request new bounded executions. `goals graph` shows the active batch, serial replay queue, node states and a bounded wave audit containing report IDs, path owners, conflicts and decisions.

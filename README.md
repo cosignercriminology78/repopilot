@@ -85,7 +85,7 @@ Version **1.5.0** adds [post-merge tracking and reproducible Agent evaluation](d
 
 Version **1.5.0** also adds [multi-Agent collaboration](docs/MULTI-AGENT-COLLABORATION.md): separate Planner, Tester, Developer and Reviewer Codex roles, a shared bounded budget, durable role handoffs and explicit recoverable DAG-node states. The deterministic controller and independent runner retain final authority.
 
-The development line after 1.5.0 adds opt-in bounded execution of independent DAG nodes, file-level conflict detection and independent verification of the safely merged candidate.
+The development line after 1.5.0 adds opt-in bounded execution of independent DAG nodes, resource-aware wave sizing, file ownership and conflict replay on updated snapshots, failure isolation, and auditable merge decisions. Every accepted candidate still passes independent cumulative verification.
 
 - Pinned base/head SHAs and title/body digest; continuous freshness checks and cancellation.
 - Scoped literal rules and JavaScript/TypeScript AST call rules, conflict detection and expiring exceptions.
